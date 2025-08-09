@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Page Not Found - Naf's Thoughts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Lora', 'serif'],
+            },
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-white dark:bg-slate-900 transition-colors duration-500 font-sans text-slate-700 dark:text-slate-300">
+    <div class="min-h-screen flex flex-col items-center justify-center text-center px-4">
+        <h1 class="text-6xl md:text-9xl font-bold font-serif text-blue-600 dark:text-blue-400 mb-4">404</h1>
+        <h2 class="text-2xl md:text-4xl font-semibold text-slate-800 dark:text-white mb-2">Page Not Found</h2>
+        <p class="text-lg text-slate-500 dark:text-slate-400 mb-8">Oops! The page you're looking for doesn't exist.</p>
+        <a href="/" class="inline-flex items-center px-6 py-3 text-base font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-slate-900 transition-colors">
+            Go back to Home
+        </a>
+    </div>
+    <script>
+        // Apply dark mode based on user's preference to match the main app
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+</body>
+</html>
