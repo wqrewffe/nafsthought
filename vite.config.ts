@@ -17,8 +17,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      host: '0.0.0.0',                    // crucial for Render
-      port: Number(process.env.PORT) || 5173,  // dynamic port binding
+      host: '0.0.0.0',
+      port: Number(process.env.PORT) || 5173,
     },
   };
 });
