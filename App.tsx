@@ -16,10 +16,12 @@ import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AdminRoute } from './components/AdminRoute';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { PlusIcon, SpinnerIcon } from './components/Icons';
 import { StatusPage } from './pages/StatusPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { AdminDashboard } from './pages/AdminDashboard';
 
 const FullScreenLoader: React.FC = () => (
     <div className="flex-grow flex items-center justify-center">
@@ -55,13 +57,13 @@ function App() {
     setEditingPost(null);
   };
 
-  const handleSavePost = async (postData: { title: string; content: string; category: string; }, postId?: string) => {
+  const handleSavePost = async (postData: { title: string; content: string; categories: string[]; }, postId?: string) => {
     if (!user) return;
 
     if (postId) {
-      await updatePost(postId, postData.title, postData.content, postData.category);
+      await updatePost(postId, postData.title, postData.content, postData.categories);
     } else {
-      await addPost(postData.title, postData.content, user as User, postData.category);
+      await addPost(postData.title, postData.content, user as User, postData.categories);
     }
     handleCloseForm();
   };
@@ -128,7 +130,7 @@ function App() {
             </div>
         ) : (
             <AnimatePresence mode="wait">
-            <Routes location={location} key={location.pathname}>
+            <Routes>
                 <Route path="/" element={<MotionWrapper><BlogList posts={posts} /></MotionWrapper>} />
                 <Route 
                 path="/post/:slug" 
@@ -145,17 +147,15 @@ function App() {
                 <Route path="/login" element={<MotionWrapper><LoginPage /></MotionWrapper>} />
                 <Route path="/signup" element={<MotionWrapper><SignupPage /></MotionWrapper>} />
                 <Route 
-                    path="/profile"
+                    path="/profile/:username"
                     element={
-                        <ProtectedRoute>
-                            <MotionWrapper><ProfilePage /></MotionWrapper>
-                        </ProtectedRoute>
+                        <MotionWrapper><ProfilePage /></MotionWrapper>
                     }
                 />
                 <Route 
                 path="/admin/dashboard"
                 element={
-                    <ProtectedRoute>
+                    <AdminRoute>
                     <MotionWrapper>
                         <DashboardPage 
                         posts={posts}
@@ -166,10 +166,20 @@ function App() {
                         onBlockUser={handleBlockUser}
                         />
                     </MotionWrapper>
-                    </ProtectedRoute>
+                    </AdminRoute>
                 }
                 />
-                 <Route 
+                <Route 
+                path="/admin"
+                element={
+                    <AdminRoute>
+                    <MotionWrapper>
+                        <AdminDashboard />
+                    </MotionWrapper>
+                    </AdminRoute>
+                }
+                />
+                <Route 
                 path="/admin/status"
                 element={
                     <ProtectedRoute adminOnly={true}>

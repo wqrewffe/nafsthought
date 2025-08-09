@@ -4,9 +4,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useUserPreferences } from '../hooks/useUserPreferences';
 import { User, UserStats, UserAchievement, UserDraft, UserBookmark } from '../types';
 import { api } from '../hooks/useBlogData';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
-import { PostGrid } from '../components/PostGrid';
 import { 
     HeartIcon, EyeIcon, CommentIcon, PlusIcon, SpinnerIcon,
     EditIcon, BookmarkIcon, ChartIcon, AchievementIcon, SettingsIcon,
@@ -97,29 +94,8 @@ export const ProfilePage: React.FC = () => {
     const [success, setSuccess] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [editedUser, setEditedUser] = useState<User | null>(null);
-    const [profileUserId, setProfileUserId] = useState<string>('');
     
-    // Debug logs to help us understand the values
-    console.log('Current auth state:', {
-        user: user?.name,
-        normalizedUserName: user?.name?.toLowerCase().replace(/\s+/g, '-'),
-        urlUsername: username,
-        userRole: user?.role
-    });
-
-    // Determine if current user is owner or admin
-    const isOwner = 
-        // Check if user is logged in and matches the profile URL
-        (user?.name?.toLowerCase().replace(/\s+/g, '-') === username) ||
-        // Or if user is an admin
-        (user?.role === 'admin');
-
-    // Reset to overview tab if accessing restricted tab on another user's profile
-    useEffect(() => {
-        if (!isOwner && (activeTab === 'bookmarks' || activeTab === 'settings')) {
-            setActiveTab('overview');
-        }
-    }, [isOwner, activeTab]);
+    const isOwner = user?.name?.toLowerCase().replace(/\s+/g, '-') === username;
 
     useEffect(() => {
         const loadUserData = async () => {
@@ -137,35 +113,20 @@ export const ProfilePage: React.FC = () => {
                 setLoading(true);
                 setError('');
 
-                // If this is the current user's profile (including admin)
+                // If we have a logged-in user and this is their profile
                 if (user && user.name.toLowerCase().replace(/\s+/g, '-') === username.toLowerCase()) {
-                    console.log('Setting current user data:', { userId: user.uid, name: user.name });
                     setEditedUser(user);
-                    setProfileUserId(user.uid);
                     setLoading(false);
                     return;
                 }
 
-                // Try to get the user data from Firestore
-                const usersQuery = query(
-                    collection(db, 'users'),
-                    where('name', '==', username.toLowerCase().replace(/-/g, ' '))
-                );
-                const userSnap = await getDocs(usersQuery);
-
-                if (!userSnap.empty) {
-                    const userDoc = userSnap.docs[0];
-                    const userData = userDoc.data() as User;
-                    userData.uid = userDoc.id;
-                    console.log('Setting queried user data:', { userId: userDoc.id, name: userData.name });
-                    setProfileUserId(userDoc.id);
+                // If this is another user's profile
+                const userData = await api.getUserProfile(username);
+                if (userData) {
                     setEditedUser(userData);
-                    setLoading(false);
-                    return;
+                } else {
+                    setError('User not found');
                 }
-
-                // If still not found, set error
-                setError('User not found');
             } catch (error: any) {
                 console.error('Failed to load user data:', error);
                 setError(error.message || 'Failed to load user data');
@@ -345,20 +306,18 @@ export const ProfilePage: React.FC = () => {
                             : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                     }`}
                 >
-                    Posts
+                    My Posts
                 </button>
-                {isOwner && (
-                    <button
-                        onClick={() => setActiveTab('bookmarks')}
-                        className={`px-4 py-2 rounded-lg transition-colors ${
-                            activeTab === 'bookmarks'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
-                    >
-                        Bookmarks
-                    </button>
-                )}
+                <button
+                    onClick={() => setActiveTab('bookmarks')}
+                    className={`px-4 py-2 rounded-lg transition-colors ${
+                        activeTab === 'bookmarks'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                >
+                    Bookmarks
+                </button>
                 <button
                     onClick={() => setActiveTab('achievements')}
                     className={`px-4 py-2 rounded-lg transition-colors ${
@@ -450,22 +409,20 @@ export const ProfilePage: React.FC = () => {
                 {activeTab === 'posts' && (
                     <div className="space-y-6">
                         <div className="flex justify-between items-center">
-                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Posts</h2>
-                            {isOwner && (
-                                <Link
-                                    to="/create"
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-                                >
-                                    <PlusIcon className="w-5 h-5" />
-                                    <span>New Post</span>
-                                </Link>
-                            )}
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">My Posts</h2>
+                            <Link
+                                to="/create"
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                            >
+                                <PlusIcon className="w-5 h-5" />
+                                <span>New Post</span>
+                            </Link>
                         </div>
 
                         {/* Posts Grid */}
                         <div className="grid gap-6 md:grid-cols-2">
-                            {/* Drafts Section - Only show to owner */}
-                            {isOwner && editedUser?.drafts && editedUser.drafts.length > 0 && (
+                            {/* Drafts Section */}
+                            {editedUser?.drafts && editedUser.drafts.length > 0 && (
                                 <div className="md:col-span-2">
                                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
                                         Drafts
@@ -477,19 +434,6 @@ export const ProfilePage: React.FC = () => {
                                     </div>
                                 </div>
                             )}
-
-                            {/* Published Posts */}
-                            <div className="md:col-span-2">
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    {editedUser && profileUserId ? (
-                                        <PostGrid userId={profileUserId} />
-                                    ) : (
-                                        <div className="col-span-2 text-center p-8 text-slate-600 dark:text-slate-400">
-                                            No posts yet
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
                         </div>
                     </div>
                 )}

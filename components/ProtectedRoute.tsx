@@ -1,14 +1,14 @@
-import React from 'react';
+import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { SpinnerIcon } from './Icons';
 
 interface ProtectedRouteProps {
-  children: React.ReactNode;
+  children: ReactNode;
   adminOnly?: boolean;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, adminOnly = false }) => {
+export const ProtectedRoute = ({ children, adminOnly = false }: ProtectedRouteProps) => {
   const { user, loading } = useAuth();
 
   if (loading) {

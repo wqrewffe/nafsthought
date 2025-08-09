@@ -8,7 +8,7 @@ import { api } from '../hooks/useBlogData';
 interface CreatePostFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (postData: { title: string; content: string; category: string; }, postId?: string) => Promise<void>;
+  onSave: (postData: { title: string; content: string; categories: string[]; }, postId?: string) => Promise<void>;
   postToEdit: Post | null;
 }
 
@@ -22,7 +22,7 @@ const htmlToMarkdown = (html: string): string => {
 export const CreatePostForm: React.FC<CreatePostFormProps> = ({ isOpen, onClose, onSave, postToEdit }) => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState(''); // This now holds Markdown
-  const [category, setCategory] = useState('');
+  const [categoriesInput, setCategoriesInput] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [error, setError] = useState('');
@@ -37,15 +37,15 @@ export const CreatePostForm: React.FC<CreatePostFormProps> = ({ isOpen, onClose,
             const fetchedCategories = await api.getCategories();
             setCategories(fetchedCategories);
             
-            if (isEditMode && postToEdit) {
-                setTitle(postToEdit.title);
-                setContent(htmlToMarkdown(postToEdit.content));
-                setCategory(postToEdit.category);
-            } else {
-                setTitle('');
-                setContent('');
-                setCategory(fetchedCategories.length > 0 ? fetchedCategories[0].name : '');
-            }
+      if (isEditMode && postToEdit) {
+        setTitle(postToEdit.title);
+        setContent(htmlToMarkdown(postToEdit.content));
+        setCategoriesInput(postToEdit.categories ? postToEdit.categories.join(", ") : "");
+      } else {
+        setTitle('');
+        setContent('');
+        setCategoriesInput("");
+      }
         } catch (err) {
             setError("Failed to load post categories. Please try again.");
             console.error(err);
@@ -70,8 +70,8 @@ export const CreatePostForm: React.FC<CreatePostFormProps> = ({ isOpen, onClose,
       setError('Title and content cannot be empty.');
       return;
     }
-     if (!category) {
-      setError('You must select a category for the post.');
+    if (!categoriesInput.trim()) {
+      setError('You must enter at least one category for the post.');
       return;
     }
     setError('');
@@ -80,7 +80,18 @@ export const CreatePostForm: React.FC<CreatePostFormProps> = ({ isOpen, onClose,
     const formattedContent = marked.parse(content, { gfm: true }) as string;
     
     try {
-        await onSave({ title, content: formattedContent, category }, postToEdit?.id);
+        const categoriesArr = categoriesInput.trim()
+          ? categoriesInput.split(',').map(s => s.trim()).filter(s => s.length > 0)
+          : [];
+        
+        // Ensure categories are unique and non-empty
+        const uniqueCategories = [...new Set(categoriesArr)].filter(Boolean);
+        
+        await onSave({ 
+          title, 
+          content: formattedContent, 
+          categories: uniqueCategories 
+        }, postToEdit?.id);
         // On success, App.tsx will call handleCloseForm, which unmounts this component.
     } catch (err: any) {
         // The error from useBlogData contains a detailed message. We display it here.
@@ -122,32 +133,18 @@ export const CreatePostForm: React.FC<CreatePostFormProps> = ({ isOpen, onClose,
                   placeholder="Your amazing post title"
                   disabled={isSubmitting}
                 />
-              </div>
-               <div>
-                <label htmlFor="category" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Category
+                <label htmlFor="categoriesInput" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mt-4 mb-1">
+                  Categories (comma separated)
                 </label>
-                <select
-                  id="category"
-                  value={category}
-                  onChange={e => setCategory(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                  disabled={loadingCategories || isSubmitting || categories.length === 0}
-                  required
-                >
-                    {loadingCategories ? (
-                        <option>Loading categories...</option>
-                    ) : categories.length === 0 ? (
-                        <option>No categories found</option>
-                    ) : (
-                        <>
-                            <option value="" disabled>Select a category</option>
-                            {categories.map(cat => (
-                                <option key={cat.id} value={cat.name}>{cat.name}</option>
-                            ))}
-                        </>
-                    )}
-                </select>
+                <input
+                  type="text"
+                  id="categoriesInput"
+                  value={categoriesInput}
+                  onChange={e => setCategoriesInput(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. React, Firebase, Hooks"
+                  disabled={isSubmitting}
+                />
               </div>
             </div>
             <div>

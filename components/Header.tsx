@@ -27,15 +27,17 @@ export const Header: React.FC<HeaderProps> = ({ theme, toggleTheme, onNewPostCli
           <div className="flex items-center space-x-4">
              {isAuthenticated && user ? (
               <>
-                <NavLink 
-                  to="/admin/dashboard" 
-                  className={({ isActive }) => 
-                    `hidden sm:block text-sm font-medium transition-colors ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`
-                  }>
-                  Dashboard
-                </NavLink>
+                {user.role === 'admin' && (
+                  <NavLink 
+                    to="/admin" 
+                    className={({ isActive }) => 
+                      `hidden sm:block text-sm font-medium transition-colors ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`
+                    }>
+                    Admin Dashboard
+                  </NavLink>
+                )}
                  <div className="hidden sm:flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300">
-                    <Link to="/profile" className="flex items-center space-x-2 group">
+                    <Link to={`/profile/${user.name.toLowerCase().replace(/\s+/g, '-')}`} className="flex items-center space-x-2 group">
                       <AuthorAvatar name={user.name} photoURL={user.photoURL} className="w-7 h-7" />
                       <span className="font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{user.name}</span>
                     </Link>

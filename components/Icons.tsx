@@ -1,5 +1,9 @@
 import React from 'react';
-import { Sun, Moon, Heart, MessageCircle, Eye, Share2, Plus, Send, X, Menu, LogOut, Trash2, Edit, Loader2, CheckCircle2, XCircle, User, EyeOff, Flag } from 'lucide-react';
+import { 
+    Sun, Moon, Heart, MessageCircle, Eye, Share2, Plus, Send, X, Menu, 
+    LogOut, Trash2, Edit, Loader2, CheckCircle2, XCircle, User, EyeOff, Flag,
+    Bookmark, BarChart2, Award, Settings, Twitter, Github, Linkedin, Globe 
+} from 'lucide-react';
 
 interface IconProps {
   className?: string;
@@ -24,6 +28,14 @@ export const CheckCircleIcon: React.FC<IconProps> = ({ className }) => <CheckCir
 export const ErrorCircleIcon: React.FC<IconProps> = ({ className }) => <XCircle className={className} />;
 export const UserIcon: React.FC<IconProps> = ({ className }) => <User className={className} />;
 export const FlagIcon: React.FC<IconProps> = ({ className }) => <Flag className={className} />;
+export const BookmarkIcon: React.FC<IconProps> = ({ className }) => <Bookmark className={className} />;
+export const ChartIcon: React.FC<IconProps> = ({ className }) => <BarChart2 className={className} />;
+export const AchievementIcon: React.FC<IconProps> = ({ className }) => <Award className={className} />;
+export const SettingsIcon: React.FC<IconProps> = ({ className }) => <Settings className={className} />;
+export const TwitterIcon: React.FC<IconProps> = ({ className }) => <Twitter className={className} />;
+export const GitHubIcon: React.FC<IconProps> = ({ className }) => <Github className={className} />;
+export const LinkedInIcon: React.FC<IconProps> = ({ className }) => <Linkedin className={className} />;
+export const GlobeIcon: React.FC<IconProps> = ({ className }) => <Globe className={className} />;
 
 
 export const GoogleIcon: React.FC<IconProps> = ({ className }) => (

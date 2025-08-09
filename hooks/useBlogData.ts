@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Post, Comment, User, Category } from '../types';
+import { Post, Comment, User, UserStats, Category } from '../types';
 import { db } from '../firebase'; // Removed storage import
 
 // Firebase imports for v9+ (modular)
@@ -40,13 +40,44 @@ const slugify = (text: string) =>
     .replace(/\-\-+/g, '-'); // Replace multiple - with single -
 
 // --- Firebase API ---
-const formatPost = (document: DocumentSnapshot): Post => {
+export const formatPost = (document: DocumentSnapshot): Post => {
     const data = document.data() as any;
+    if (!data) {
+        throw new Error(`No data found for document ${document.id}`);
+    }
+
+    // Ensure required fields exist
+    const post: Post = {
+        id: document.id,
+        title: data.title || 'Untitled',
+        content: data.content || '',
+        slug: data.slug || document.id,
+        date: data.date?.toDate?.()?.toISOString() || new Date().toISOString(),
+        author: data.author || '',
+        authorId: data.authorId || '',
+        authorPhotoURL: data.authorPhotoURL || null,
+        categories: Array.isArray(data.categories) ? data.categories : [],
+        coverImage: data.coverImage || '',
+        views: data.views || 0,
+        upvotes: data.upvotes || 0,
+        comments: [],
+        reports: Array.isArray(data.reports) ? data.reports : []
+    };
+
     // Sort comments by timestamp, newest first.
-    const sortedComments = (data.comments || []).map((c: any) => ({
-        ...c,
-        timestamp: c.timestamp || new Date().toISOString()
-    })).sort((a: Comment, b: Comment) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    if (Array.isArray(data.comments)) {
+        post.comments = data.comments.map((c: any) => ({
+            id: c.id || '',
+            authorId: c.authorId || '',
+            author: c.author || '',
+            authorPhotoURL: c.authorPhotoURL || null,
+            text: c.text || '',
+            timestamp: c.timestamp || new Date().toISOString(),
+            parentId: c.parentId || null
+        })).sort((a: Comment, b: Comment) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }
+
+    return post;
 
     return {
         id: document.id,
@@ -59,10 +90,10 @@ const formatPost = (document: DocumentSnapshot): Post => {
         date: data.date instanceof Timestamp ? data.date.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString(),
         upvotes: data.upvotes || 0,
         views: data.views || 0,
-        comments: sortedComments,
+        comments: post.comments,
         coverImage: data.coverImage || `https://picsum.photos/seed/${document.id}/1200/600`,
-        category: data.category || 'Uncategorized',
         reports: data.reports || [],
+        categories: Array.isArray(data.categories) ? data.categories.filter(Boolean) : [],
     };
 };
 
@@ -89,7 +120,220 @@ Please carefully check these things for project "${projectId}":
     return `An unexpected error occurred: ${errorMessage}`;
 };
 
+const calculateReadingStreak = async (userId: string): Promise<number> => {
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+    const userData = userDoc.data() as User;
+    
+    if (!userData.preferences?.readingHistory?.length) {
+        return 0;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const readDates = userData.preferences.readingHistory
+        .map(entry => new Date(entry.timestamp))
+        .map(date => {
+            date.setHours(0, 0, 0, 0);
+            return date.getTime();
+        })
+        .sort()
+        .reverse();
+
+    if (readDates[0] < today.getTime()) {
+        return 0; // No reading today
+    }
+
+    let streak = 1;
+    let currentDate = today.getTime();
+
+    for (let i = 1; i < readDates.length; i++) {
+        const previousDay = new Date(currentDate);
+        previousDay.setDate(previousDay.getDate() - 1);
+        
+        if (readDates.includes(previousDay.getTime())) {
+            streak++;
+            currentDate = previousDay.getTime();
+        } else {
+            break;
+        }
+    }
+
+    return streak;
+};
+
+const calculateUserStats = async (userId: string): Promise<UserStats> => {
+    // Get all posts by the user
+    const userPostsQuery = query(postsCollection, where('authorId', '==', userId));
+    const userPostsSnap = await getDocs(userPostsQuery);
+    const posts = userPostsSnap.docs.map(doc => formatPost(doc));
+
+    // Get current date for monthly calculations
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Calculate total stats
+    const totalPosts = posts.length;
+    const totalViews = posts.reduce((sum, post) => sum + post.views, 0);
+    const totalUpvotes = posts.reduce((sum, post) => sum + post.upvotes, 0);
+    const totalComments = posts.reduce((sum, post) => sum + post.comments.length, 0);
+
+    // Calculate monthly stats
+    const postsThisMonth = posts.filter(post => new Date(post.date) >= startOfMonth).length;
+    const viewsThisMonth = posts
+        .filter(post => new Date(post.date) >= startOfMonth)
+        .reduce((sum, post) => sum + post.views, 0);
+
+    // Calculate category statistics
+    const categoryCount = new Map<string, number>();
+    posts.forEach(post => {
+        post.categories.forEach(category => {
+            categoryCount.set(category, (categoryCount.get(category) || 0) + 1);
+        });
+    });
+
+    const mostReadCategories = Array.from(categoryCount.entries())
+        .map(([category, count]) => ({ category, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+    return {
+        totalPosts,
+        totalViews,
+        totalUpvotes,
+        totalComments,
+        postsThisMonth,
+        viewsThisMonth,
+        mostReadCategories,
+        readingStreak: await calculateReadingStreak(userId),
+        lastActive: new Date().toISOString()
+    };
+};
+
 export const api = {
+    recordPostView: async (userId: string, postId: string, categories: string[]) => {
+        const userRef = doc(db, 'users', userId);
+        const now = new Date();
+        
+        // Update reading history
+        await updateDoc(userRef, {
+            'preferences.readingHistory': arrayUnion({
+                postId,
+                timestamp: now.toISOString(),
+                timeSpent: 0, // This would be updated later
+                completed: false,
+                categories
+            }),
+            'preferences.lastReadPosts': arrayUnion(postId),
+            'stats.lastActive': now.toISOString()
+        });
+
+        // Update user's category scores
+        const userDoc = await getDoc(userRef);
+        const userData = userDoc.data() as User;
+        const categoryScores = userData.preferences?.categoryScores || {};
+        
+        categories.forEach(category => {
+            categoryScores[category] = (categoryScores[category] || 0) + 1;
+        });
+
+        await updateDoc(userRef, {
+            'preferences.categoryScores': categoryScores
+        });
+
+        // Recalculate stats
+        const stats = await calculateUserStats(userId);
+        await updateDoc(userRef, { stats });
+    },
+
+    getUserProfile: async (usernameOrId: string): Promise<User | null> => {
+        try {
+            // First try to find by username (which is the normalized name)
+            const userQuery = query(
+                usersCollection, 
+                where('name', '==', usernameOrId.toLowerCase().replace(/-/g, ' ')),
+                limit(1)
+            );
+            const userSnap = await getDocs(userQuery);
+            
+            let userData: User | null = null;
+            let userId: string;
+
+            if (!userSnap.empty) {
+                userData = userSnap.docs[0].data() as User;
+                userId = userSnap.docs[0].id;
+            } else {
+                // If not found by username, try to find by uid
+                const userDoc = await getDoc(doc(db, 'users', usernameOrId));
+                if (userDoc.exists()) {
+                    userData = userDoc.data() as User;
+                    userId = userDoc.id;
+                }
+            }
+
+            if (!userData) {
+                return null;
+            }
+
+            // Calculate fresh stats for the user
+            const stats = await calculateUserStats(userId);
+
+            // Update the user document with new stats
+            await updateDoc(doc(db, 'users', userId), { stats });
+
+            return {
+                ...userData,
+                uid: userId,
+                stats: stats // Use the freshly calculated stats
+            };
+        } catch (error) {
+            console.error('Error fetching user profile:', error);
+            throw error;
+        }
+    },
+
+    updateUserProfile: async (userId: string, userData: Partial<User>): Promise<void> => {
+        const userDoc = doc(db, 'users', userId);
+        await updateDoc(userDoc, {
+            ...userData,
+            lastUpdated: serverTimestamp()
+        });
+    },
+    addPost: async (title: string, content: string, user: User, categories: string[] | undefined): Promise<Post> => {
+        const safeCategories = Array.isArray(categories) ? categories.filter(Boolean) : [];
+        
+        // Ensure categories exist in the categories collection
+        const batch = writeBatch(db);
+        for (const category of safeCategories) {
+            const slug = category.toLowerCase().replace(/\s+/g, '-');
+            const categoryRef = doc(db, 'categories', slug);
+            batch.set(categoryRef, { name: category }, { merge: true });
+        }
+        await batch.commit();
+
+        const newPostData = {
+            slug: slugify(title),
+            title,
+            content,
+            author: user.name.trim() || 'Anonymous',
+            authorId: user.uid,
+            authorPhotoURL: user.photoURL || null,
+            date: serverTimestamp(),
+            upvotes: 0,
+            views: 0,
+            comments: [],
+            reports: [],
+            categories: safeCategories,
+            coverImage: `https://picsum.photos/seed/${Math.random().toString(36).substring(7)}/1200/600`
+        };
+        const docRef = await addDoc(postsCollection, newPostData);
+        return {
+            ...newPostData,
+            id: docRef.id,
+            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+        } as Post;
+    },
     checkConnection: async (): Promise<{success: boolean; error?: string}> => {
         try {
             const healthCheckDoc = doc(db, '_internal', 'healthcheck');
@@ -108,46 +352,32 @@ export const api = {
 
     getPostBySlug: async (slug: string): Promise<Post | null> => {
         const q = query(postsCollection, where('slug', '==', slug), limit(1));
-        const querySnapshot = await getDocs(q);
-        if (querySnapshot.empty) {
-            return null;
-        }
-        return formatPost(querySnapshot.docs[0]);
-    },
-    
-    getUserProfile: async (uid: string): Promise<User | null> => {
-        if (!uid) return null;
-        const userDoc = await getDoc(doc(db, 'users', uid));
-        return userDoc.exists() ? userDoc.data() as User : null;
+        const postSnapshot = await getDocs(q);
+        if (postSnapshot.empty) return null;
+        return formatPost(postSnapshot.docs[0]);
     },
 
-    addPost: async (title: string, content: string, user: User, category: string): Promise<Post> => {
-        const newPostData = {
-            slug: slugify(title),
-            title,
-            content,
-            author: user.name.trim() || 'Anonymous',
-            authorId: user.uid,
-            authorPhotoURL: user.photoURL || null,
-            date: serverTimestamp(),
-            upvotes: 0,
-            views: 0,
-            comments: [],
-            reports: [],
-            category,
-            coverImage: `https://picsum.photos/seed/${Math.random().toString(36).substring(7)}/1200/600`
-        };
-        const docRef = await addDoc(postsCollection, newPostData);
-        return {
-            ...newPostData,
-            id: docRef.id,
-            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-        } as Post;
+    getPost: async (postId: string): Promise<Post | null> => {
+        const docRef = doc(db, 'posts', postId);
+        const postSnapshot = await getDoc(docRef);
+        if (!postSnapshot.exists()) return null;
+        return formatPost(postSnapshot);
     },
-    
-    updatePost: async (postId: string, title: string, content: string, category: string): Promise<void> => {
+
+    updatePost: async (postId: string, title: string, content: string, categories: string[]): Promise<void> => {
+        const safeCategories = categories.filter(Boolean);
+        
+        // Ensure categories exist in the categories collection
+        const batch = writeBatch(db);
+        for (const category of safeCategories) {
+            const slug = category.toLowerCase().replace(/\s+/g, '-');
+            const categoryRef = doc(db, 'categories', slug);
+            batch.set(categoryRef, { name: category }, { merge: true });
+        }
+        await batch.commit();
+
         const postDoc = doc(db, 'posts', postId);
-        await updateDoc(postDoc, { title, content, slug: slugify(title), category });
+        await updateDoc(postDoc, { title, content, slug: slugify(title), categories: safeCategories });
     },
     
     deletePost: async (postId: string): Promise<void> => {
@@ -259,6 +489,21 @@ export const useBlogData = () => {
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Initialize categories if they don't exist
+    useEffect(() => {
+        const initCategories = async () => {
+            try {
+                const categories = await api.getCategories();
+                if (categories.length === 0) {
+                    await api.seedInitialCategories();
+                }
+            } catch (err) {
+                console.warn('Failed to initialize categories:', err);
+            }
+        };
+        initCategories();
+    }, []);
 
     const refreshPosts = useCallback(async () => {
         try {

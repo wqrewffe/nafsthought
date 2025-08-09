@@ -23,5 +23,11 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "typescript": "~5.8.2"
-  }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "author": "Naf",
+  "description": "A personal blog built with React and Vite."
 }

@@ -4,9 +4,11 @@ interface AuthorAvatarProps {
   className?: string;
   name: string;
   photoURL?: string | null; // Kept for prop compatibility, but functionality is removed.
+  clickable?: boolean;
+  onClick?: () => void;
 }
 
-export const AuthorAvatar: React.FC<AuthorAvatarProps> = ({ className, name }) => {
+export const AuthorAvatar: React.FC<AuthorAvatarProps> = ({ className, name, clickable, onClick }) => {
   const getInitials = (name: string): string => {
     if (!name || !name.trim()) return '?';
     const parts = name.trim().split(' ').filter(Boolean);
@@ -23,10 +25,15 @@ export const AuthorAvatar: React.FC<AuthorAvatarProps> = ({ className, name }) =
   
   const initials = getInitials(name);
 
+  const baseClasses = `flex-shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-blue-400 dark:to-indigo-500 text-white select-none ${className}`;
+  const clickableClasses = clickable ? 'cursor-pointer hover:scale-105 transition-transform' : '';
+
   return (
     <div
-      className={`flex-shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 dark:from-blue-400 dark:to-indigo-500 text-white select-none ${className}`}
-      aria-hidden="true"
+      className={`${baseClasses} ${clickableClasses}`}
+      onClick={clickable ? onClick : undefined}
+      role={clickable ? "button" : undefined}
+      aria-hidden={!clickable}
     >
       <span className="font-bold leading-none">{initials}</span>
     </div>

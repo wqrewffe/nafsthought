@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { Post, Comment, User } from '../types';
 import { HeartIcon, CommentIcon, EyeIcon, ShareIcon, SendIcon, SpinnerIcon, FlagIcon, CloseIcon } from './Icons';
 import { AuthorAvatar } from './AuthorAvatar';
 import { api } from '../hooks/useBlogData';
 import { useAuth } from '../hooks/useAuth';
+import { useUserPreferences } from '../hooks/useUserPreferences';
 
 interface BlogPostProps {
   upvotePost: (postId: string) => Promise<void>;
@@ -181,6 +182,32 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
   const [loading, setLoading] = useState(true);
   const [isReportModalOpen, setReportModalOpen] = useState(false);
   const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
+  const [readingStartTime, setReadingStartTime] = useState<number>(0);
+  const { updateReadingHistory } = useUserPreferences(user);
+  const hasTrackedRef = useRef(false);
+  
+  // Track reading time and completion
+  useEffect(() => {
+    if (post && !hasTrackedRef.current) {
+      setReadingStartTime(Date.now());
+      
+      // Track reading completion when user leaves the page
+      const trackReading = () => {
+        if (!hasTrackedRef.current) {
+          const timeSpent = Math.floor((Date.now() - readingStartTime) / 1000); // Convert to seconds
+          const completed = timeSpent >= 30; // Consider read if spent more than 30 seconds
+          updateReadingHistory(post.id, post.categories, timeSpent, completed);
+          hasTrackedRef.current = true;
+        }
+      };
+
+      window.addEventListener('beforeunload', trackReading);
+      return () => {
+        window.removeEventListener('beforeunload', trackReading);
+        trackReading(); // Track when component unmounts
+      };
+    }
+  }, [post, readingStartTime, updateReadingHistory]);
   
   useEffect(() => {
     const fetchPost = async () => {
@@ -242,7 +269,17 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
        {isReportModalOpen && <ReportModal post={post} onClose={() => setReportModalOpen(false)} reportPost={reportPost} />}
       <header className="mb-8 text-center">
         <div className="mb-4">
-            <span className="inline-block bg-blue-100 text-blue-800 text-sm font-semibold px-3 py-1 rounded-full dark:bg-blue-900 dark:text-blue-300">{post.category}</span>
+          {post.categories && post.categories.length > 0 ? (
+            post.categories.map((cat, idx) => (
+              <span key={idx} className="inline-block bg-blue-100 text-blue-800 text-sm font-semibold px-3 py-1 rounded-full dark:bg-blue-900 dark:text-blue-300 mr-2">
+                {cat}
+              </span>
+            ))
+          ) : (
+            <span className="inline-block bg-gray-100 text-gray-800 text-sm font-semibold px-3 py-1 rounded-full dark:bg-gray-900 dark:text-gray-300">
+              Uncategorized
+            </span>
+          )}
         </div>
         <h1 className="text-4xl md:text-5xl font-bold font-serif text-slate-900 dark:text-white leading-tight mb-4">{post.title}</h1>
         <div className="flex items-center justify-center space-x-4 text-slate-500 dark:text-slate-400">
