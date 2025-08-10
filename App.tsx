@@ -21,6 +21,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { PlusIcon, SpinnerIcon } from './components/Icons';
 import { StatusPage } from './pages/StatusPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 
 const FullScreenLoader: React.FC = () => (
@@ -58,10 +59,13 @@ function App() {
   };
 
   const handleSavePost = async (postData: { title: string; content: string; categories: string[]; }, postId?: string) => {
-    if (!user) return;
+    if (!user || user.role !== 'admin') {
+      alert('Only administrators can create or edit posts.');
+      return;
+    }
 
     if (postId) {
-      await updatePost(postId, postData.title, postData.content, postData.categories);
+      await updatePost(postId, postData.title, postData.content, postData.categories, user);
     } else {
       await addPost(postData.title, postData.content, user as User, postData.categories);
     }
@@ -69,8 +73,13 @@ function App() {
   };
 
   const handleDeletePost = async (postId: string) => {
+    if (!user || user.role !== 'admin') {
+      alert('Only administrators can delete posts.');
+      return;
+    }
+    
     if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-      await deletePost(postId);
+      await deletePost(postId, user);
     }
   };
   
@@ -144,8 +153,24 @@ function App() {
                     </MotionWrapper>
                 } 
                 />
+                <Route 
+                path="/edit/:slug"
+                element={
+                    <ProtectedRoute>
+                        <MotionWrapper>
+                            <CreatePostForm 
+                                isOpen={true}
+                                onClose={() => window.location.href = '/'}
+                                onSave={handleSavePost}
+                                postToEdit={posts.find(p => p.slug === location.pathname.split('/')[2])}
+                            />
+                        </MotionWrapper>
+                    </ProtectedRoute>
+                }
+                />
                 <Route path="/login" element={<MotionWrapper><LoginPage /></MotionWrapper>} />
                 <Route path="/signup" element={<MotionWrapper><SignupPage /></MotionWrapper>} />
+                <Route path="/verify-email" element={<MotionWrapper><VerifyEmailPage /></MotionWrapper>} />
                 <Route 
                     path="/profile/:username"
                     element={

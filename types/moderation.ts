@@ -25,27 +25,27 @@ export interface ModerationAction {
 // Define permissions for each role
 export const rolePermissions: Record<UserRole, UserPermissions> = {
   user: {
-    canCreatePosts: true,
-    canEditOwnPosts: true,
-    canDeleteOwnPosts: true,
+    canCreatePosts: false,
+    canEditOwnPosts: false,
+    canDeleteOwnPosts: false,
     canModerateComments: false,
     canManageCategories: false,
     canManageUsers: false
   },
   contributor: {
-    canCreatePosts: true,
-    canEditOwnPosts: true,
-    canDeleteOwnPosts: true,
+    canCreatePosts: false,
+    canEditOwnPosts: false,
+    canDeleteOwnPosts: false,
     canModerateComments: false,
     canManageCategories: false,
     canManageUsers: false
   },
   moderator: {
-    canCreatePosts: true,
-    canEditOwnPosts: true,
-    canDeleteOwnPosts: true,
-    canModerateComments: true,
-    canManageCategories: true,
+    canCreatePosts: false,
+    canEditOwnPosts: false,
+    canDeleteOwnPosts: false,
+    canModerateComments: false,
+    canManageCategories: false,
     canManageUsers: false
   },
   admin: {

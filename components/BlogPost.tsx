@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { Post, Comment, User } from '../types';
-import { HeartIcon, CommentIcon, EyeIcon, ShareIcon, SendIcon, SpinnerIcon, FlagIcon, CloseIcon } from './Icons';
+import { HeartIcon, CommentIcon, EyeIcon, ShareIcon, SendIcon, SpinnerIcon, FlagIcon, CloseIcon, EditIcon, TrashIcon, ClockIcon } from './Icons';
+import { calculateReadingTime, formatReadingTime } from '../utils/readingTime';
 import { AuthorAvatar } from './AuthorAvatar';
 import { api } from '../hooks/useBlogData';
 import { useAuth } from '../hooks/useAuth';
@@ -97,6 +98,7 @@ const CommentForm: React.FC<{ post: Post; addComment: BlogPostProps['addComment'
     const [text, setText] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
+    const readingTime = useMemo(() => formatReadingTime(calculateReadingTime(post)), [post]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -140,7 +142,17 @@ const CommentForm: React.FC<{ post: Post; addComment: BlogPostProps['addComment'
     );
 };
 
-const CommentThread: React.FC<{ comments: Comment[], parentId?: string | null, onReply: (commentId: string) => void, activeReplyId: string | null, addComment: BlogPostProps['addComment'], post: Post, onCommentAdded: (newComment: Comment) => void }> = ({ comments, parentId = null, onReply, activeReplyId, ...props }) => {
+const CommentThread: React.FC<{ 
+    comments: Comment[], 
+    parentId?: string | null, 
+    onReply: (commentId: string) => void, 
+    activeReplyId: string | null, 
+    addComment: BlogPostProps['addComment'], 
+    post: Post,
+    onCommentAdded: (newComment: Comment) => void,
+    setPost: (updater: (post: Post | null) => Post | null) => void
+}> = ({ comments, parentId = null, onReply, activeReplyId, post, setPost, ...props }) => {
+    const { user } = useAuth();
     const childComments = useMemo(() => comments.filter(comment => comment.parentId === parentId), [comments, parentId]);
     if (childComments.length === 0) return null;
     
@@ -157,7 +169,33 @@ const CommentThread: React.FC<{ comments: Comment[], parentId?: string | null, o
                            <time className="text-xs text-slate-500 dark:text-slate-400">{new Date(comment.timestamp).toLocaleString()}</time>
                         </div>
                         <p className="text-slate-600 dark:text-slate-400">{comment.text}</p>
-                        <button onClick={() => onReply(comment.id)} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline mt-1">Reply</button>
+                        <div className="flex items-center space-x-4 mt-1">
+                            <button 
+                                onClick={() => onReply(comment.id)} 
+                                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                                Reply
+                            </button>
+                            {/* Only show edit/delete for comment author or admin/moderator */}
+                            {user && (user.uid === comment.authorId || ['admin', 'moderator'].includes(user.role)) && (
+                                <div className="flex items-center space-x-2">
+                                    <button
+                                        onClick={() => {
+                                            if (window.confirm('Are you sure you want to delete this comment?')) {
+                                                api.deleteComment(post.id, comment.id);
+                                                setPost(p => p ? {
+                                                    ...p,
+                                                    comments: p.comments.filter(c => c.id !== comment.id)
+                                                } : null);
+                                            }
+                                        }}
+                                        className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         
                         {activeReplyId === comment.id && (
                             <CommentForm {...props} parentId={comment.id} onCancel={() => onReply('')} />
@@ -173,6 +211,59 @@ const CommentThread: React.FC<{ comments: Comment[], parentId?: string | null, o
     );
 };
 
+
+const extractPreview = (content: string): string => {
+    // Remove HTML tags and get plain text
+    const plainText = content.replace(/<[^>]+>/g, '');
+    // Get first 200 characters
+    return plainText.substring(0, 200) + (plainText.length > 200 ? '...' : '');
+};
+
+const BlogCard: React.FC<{ post: Post }> = ({ post }) => (
+    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg hover:shadow-xl transition-shadow overflow-hidden mb-8">
+        {post.coverImage && (
+            <img 
+                src={post.coverImage} 
+                alt={post.title} 
+                className="w-full h-64 object-cover"
+            />
+        )}
+        <div className="p-8">
+            <div className="flex flex-wrap gap-2 mb-4">
+                {post.categories?.map((cat, idx) => (
+                    <span key={idx} className="text-sm font-semibold bg-blue-100 text-blue-800 px-3 py-1 rounded-full dark:bg-blue-900 dark:text-blue-300">
+                        {cat}
+                    </span>
+                ))}
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                {post.title}
+            </h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
+                {extractPreview(post.content)}
+            </p>
+            <div className="flex items-center justify-between text-base">
+                <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                        <AuthorAvatar name={post.author} photoURL={post.authorPhotoURL} className="w-8 h-8" />
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{post.author}</span>
+                    </div>
+                    <span className="text-slate-500 dark:text-slate-400">{post.date}</span>
+                </div>
+                <div className="flex items-center space-x-6">
+                    <span className="flex items-center space-x-2">
+                        <EyeIcon className="w-5 h-5 text-blue-500" />
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{post.views}</span>
+                    </span>
+                    <span className="flex items-center space-x-2">
+                        <CommentIcon className="w-5 h-5 text-green-500" />
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{post.comments.length}</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+);
 
 export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, reportPost }) => {
   const { slug } = useParams<{ slug: string }>();
@@ -265,7 +356,7 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
   const shareUrl = `${window.location.origin}${window.location.pathname}#${location.hash.substring(1)}`;
 
   return (
-    <article className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 animate-fade-in">
+    <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 animate-fade-in">
        {isReportModalOpen && <ReportModal post={post} onClose={() => setReportModalOpen(false)} reportPost={reportPost} />}
       <header className="mb-8 text-center">
         <div className="mb-4">
@@ -289,12 +380,21 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
           </div>
           <span>&bull;</span>
           <time dateTime={post.date}>{post.date}</time>
+          <span>&bull;</span>
+          <div className="flex items-center space-x-2">
+            <ClockIcon className="w-4 h-4" />
+            <span>{formatReadingTime(calculateReadingTime(post))}</span>
+          </div>
         </div>
       </header>
       
-      <img src={post.coverImage} alt={post.title} className="w-full h-auto rounded-xl shadow-lg mb-8" />
+      <img 
+        src={post.coverImage} 
+        alt={post.title} 
+        className="w-full h-[480px] object-cover rounded-2xl shadow-xl mb-12" 
+      />
       
-      <div className="prose prose-lg dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 font-serif" dangerouslySetInnerHTML={{ __html: post.content }} />
+      <div className="prose prose-xl dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 font-serif leading-relaxed" dangerouslySetInnerHTML={{ __html: post.content }} />
       
       <div className="my-12 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex flex-wrap items-center justify-around gap-6">
         <Stat icon={<EyeIcon className="w-6 h-6 text-blue-500" />} label="Views" value={post.views.toLocaleString()} />
@@ -309,12 +409,52 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
           <ShareIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
           <p className="text-sm text-slate-600 dark:text-slate-300 font-mono break-all">{shareUrl}</p>
         </div>
-        <div>
-          <button onClick={() => setReportModalOpen(true)} className="flex items-center space-x-2 text-xs text-red-600 dark:text-red-400 hover:underline">
-             <FlagIcon className="w-4 h-4" />
-             <span>Report Post</span>
-          </button>
-          <button onClick={() => navigator.clipboard.writeText(shareUrl)} className="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">Copy link</button>
+        <div className="flex items-center space-x-4">
+          {/* Only show edit/delete options for admin */}
+          {user && user.role === 'admin' && (
+            <div className="flex items-center space-x-3 mr-4">
+              <Link
+                to={`/edit/${post.slug}`}
+                className="flex items-center space-x-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                <EditIcon className="w-4 h-4" />
+                <span>Edit</span>
+              </Link>
+              {/* Only show delete option for admin */}
+              {user.role === 'admin' && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+                      api.deletePost(post.id, user);
+                      window.location.href = '/';
+                    }
+                  }}
+                  className="flex items-center space-x-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                  <span>Delete</span>
+                </button>
+              )}
+            </div>
+          )}
+          <div className="flex flex-col">
+            {/* Only show report button if user is logged in and not the post author */}
+            {user && user.uid !== post.authorId && (
+              <button 
+                onClick={() => setReportModalOpen(true)} 
+                className="flex items-center space-x-2 text-xs text-red-600 dark:text-red-400 hover:underline mb-2"
+              >
+                <FlagIcon className="w-4 h-4" />
+                <span>Report Post</span>
+              </button>
+            )}
+            <button 
+              onClick={() => navigator.clipboard.writeText(shareUrl)} 
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Copy link
+            </button>
+          </div>
         </div>
       </div>
 
@@ -327,6 +467,7 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
             addComment={addComment}
             post={post}
             onCommentAdded={handleCommentAdded}
+            setPost={setPost}
         />
         {post.comments.length === 0 && <p className="text-slate-500 dark:text-slate-400">Be the first to comment!</p>}
         {activeReplyId === null && <CommentForm post={post} addComment={addComment} onCommentAdded={handleCommentAdded} />}

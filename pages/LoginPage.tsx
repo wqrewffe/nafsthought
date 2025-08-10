@@ -4,9 +4,10 @@ import { useAuth } from '../hooks/useAuth';
 import { GoogleIcon, EyeIcon, EyeOffIcon, SpinnerIcon } from '../components/Icons';
 
 export const LoginPage: React.FC = () => {
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(() => sessionStorage.getItem('signupEmail') || '');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { login, loginWithGoogle, resetPassword, user, loading: authLoading } = useAuth();
     const navigate = useNavigate();
@@ -14,6 +15,21 @@ export const LoginPage: React.FC = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [isResetMode, setIsResetMode] = useState(false);
     const [resetMessage, setResetMessage] = useState('');
+
+    React.useEffect(() => {
+        // Check if user just signed up or needs verification
+        const urlParams = new URLSearchParams(window.location.search);
+        const status = urlParams.get('status');
+        const storedEmail = sessionStorage.getItem('signupEmail');
+
+        if (status === 'verification-required' || storedEmail) {
+            setSuccess('Please verify your email before logging in. Check your inbox for the verification link or');
+            // Keep the email for the form
+            setEmail(storedEmail || '');
+            // Remove the query parameter
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
 
     if (authLoading) {
         return (
@@ -130,6 +146,19 @@ export const LoginPage: React.FC = () => {
             <div className="w-full max-w-md p-8 space-y-6 bg-white dark:bg-slate-800/50 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700/50">
                 <div className="text-center">
                     <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Login to your account</h1>
+                    {success && (
+                        <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <p className="text-sm text-green-700 dark:text-green-300">
+                                {success}{' '}
+                                <Link 
+                                    to="/verify-email"
+                                    className="inline-block font-medium text-green-600 hover:text-green-500 dark:text-green-400 dark:hover:text-green-300 hover:underline"
+                                >
+                                    request a new one
+                                </Link>
+                            </p>
+                        </div>
+                    )}
                     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         Or{' '}
                         <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">

@@ -8,6 +8,7 @@ export const SignupPage: React.FC = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { signup, user, loading: authLoading } = useAuth();
     const navigate = useNavigate();
@@ -37,7 +38,9 @@ export const SignupPage: React.FC = () => {
         setIsSubmitting(true);
         try {
             await signup(name, email, password);
-            navigate('/');
+            // Store email in session storage for the login page
+            sessionStorage.setItem('signupEmail', email);
+            navigate('/login?status=verification-required');
         } catch (err: any) {
             if (err.message.includes('auth/email-already-in-use')) {
                 setError('This email address is already in use.');
@@ -52,6 +55,7 @@ export const SignupPage: React.FC = () => {
 
     return (
         <div className="flex items-center justify-center min-h-[calc(100vh-200px)] animate-fade-in">
+            <button id="sign-in-button" style={{ display: 'none' }}></button>
             <div className="w-full max-w-md p-8 space-y-6 bg-white dark:bg-slate-800/50 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700/50">
                 <div className="text-center">
                     <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Create an account</h1>
@@ -91,9 +95,10 @@ export const SignupPage: React.FC = () => {
                             placeholder="Email address"
                         />
                     </div>
+
                     <div>
                         <label htmlFor="password" className="sr-only">Password</label>
-                         <div className="relative">
+                        <div className="relative">
                             <input
                                 id="password"
                                 name="password"
@@ -126,6 +131,18 @@ export const SignupPage: React.FC = () => {
                         </button>
                     </div>
                 </form>
+                {success && (
+                    <div className="mt-6 space-y-4">
+                        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <h2 className="text-lg font-medium text-green-800 dark:text-green-200">
+                                Account Created Successfully
+                            </h2>
+                            <p className="mt-2 text-sm text-green-700 dark:text-green-300">
+                                Please check your email for verification instructions. You need to verify your email before you can log in.
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

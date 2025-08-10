@@ -9,10 +9,11 @@ import {
     signInWithPopup,
     sendPasswordResetEmail,
     updateProfile,
+    sendEmailVerification,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { User } from '../types';
+import { User } from '../types/auth';
 
 interface AuthContextType {
     user: User | null;
@@ -23,6 +24,7 @@ interface AuthContextType {
     loginWithGoogle: () => Promise<User>;
     resetPassword: (email: string) => Promise<void>;
     updateUserProfile: (uid: string, data: { name?: string; }) => Promise<void>;
+    resendVerificationEmail: (email: string, password: string) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,10 +53,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
                 try {
+                    // Reload the user to get the latest email verification status
+                    await firebaseUser.reload();
+                    
+                    if (!firebaseUser.emailVerified) {
+                        // If email is not verified, sign out and don't set the user
+                        await signOut(auth);
+                        setUser(null);
+                        setLoading(false);
+                        return;
+                    }
+
                     const userProfile = await fetchUserProfile(firebaseUser);
-                    setUser(userProfile);
+                    if (userProfile) {
+                        // Update the email verification status in Firestore if it's different
+                        if (userProfile.emailVerified !== firebaseUser.emailVerified) {
+                            await updateDoc(doc(db, 'users', firebaseUser.uid), {
+                                emailVerified: firebaseUser.emailVerified
+                            });
+                            userProfile.emailVerified = firebaseUser.emailVerified;
+                        }
+                        setUser(userProfile);
+                    } else {
+                        setUser(null);
+                    }
                 } catch (error: any) {
                     console.error("Auth state change error:", error.message);
+                    await signOut(auth);
                     setUser(null);
                 }
             } else {
@@ -69,6 +94,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const signup = async (name: string, email: string, pass: string) => {
         const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
         await updateProfile(userCredential.user, { displayName: name });
+        
+        // Send email verification
+        await sendEmailVerification(userCredential.user);
+        
         const newUser: User = {
             uid: userCredential.user.uid,
             name,
@@ -76,15 +105,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: email.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'user',
             isBlocked: false,
             photoURL: null,
+            emailVerified: false
         };
         await setDoc(doc(db, 'users', newUser.uid), newUser);
-        setUser(newUser);
+        
+        // Sign out immediately after signup to force email verification
+        await signOut(auth);
+        setUser(null);
     };
 
     const login = async (email: string, pass: string): Promise<User> => {
         const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+        
+        // Reload user to get fresh verification status
+        await userCredential.user.reload();
+        
+        if (!userCredential.user.emailVerified) {
+            await signOut(auth);
+            throw new Error("Please verify your email before logging in. Check your inbox for the verification link or request a new one.");
+        }
+
         const userProfile = await fetchUserProfile(userCredential.user);
         if (!userProfile) throw new Error("User profile could not be loaded.");
+        
+        // Ensure Firestore emailVerified status is synced
+        await updateDoc(doc(db, 'users', userCredential.user.uid), {
+            emailVerified: true
+        });
+        userProfile.emailVerified = true;
+        
         setUser(userProfile);
         return userProfile;
     };
@@ -93,6 +142,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const provider = new GoogleAuthProvider();
         const result = await signInWithPopup(auth, provider);
         const firebaseUser = result.user;
+        
+        // Google-authenticated users are automatically email verified
+        // but we'll double-check and update Firestore accordingly
 
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const userDoc = await getDoc(userDocRef);
@@ -106,6 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role: firebaseUser.email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'user',
                 isBlocked: false,
                 photoURL: null, // Always null
+                emailVerified: firebaseUser.emailVerified ?? false,
             };
             await setDoc(doc(db, 'users', userProfile.uid), userProfile);
         } else {
@@ -152,7 +205,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } : null);
     };
 
-    const value = { user, loading, signup, login, logout, loginWithGoogle, resetPassword, updateUserProfile };
+    const resendVerificationEmail = async (email: string, password: string) => {
+        try {
+            // First sign in the user
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            // Send the verification email
+            await sendEmailVerification(userCredential.user);
+            // Sign out to maintain unverified state
+            await signOut(auth);
+        } catch (error: any) {
+            if (error.message.includes('auth/invalid-credential')) {
+                throw new Error('Invalid email or password. Please try again.');
+            }
+            throw error;
+        }
+    };
+
+    const value = { 
+        user, 
+        loading, 
+        signup, 
+        login, 
+        logout, 
+        loginWithGoogle, 
+        resetPassword, 
+        updateUserProfile,
+        resendVerificationEmail
+    };
 
     return (
         <AuthContext.Provider value={value}>

@@ -23,6 +23,10 @@ export const ProtectedRoute = ({ children, adminOnly = false }: ProtectedRoutePr
     return <Navigate to="/login" replace />;
   }
 
+  if (!user.emailVerified) {
+    return <Navigate to="/verify-email" replace />;
+  }
+
   if (adminOnly && user.role !== 'admin') {
     // Redirect non-admins away from admin-only pages
     return <Navigate to="/" replace />;

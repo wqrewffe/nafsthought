@@ -30,14 +30,41 @@ const usersCollection = collection(db, 'users');
 const categoriesCollection = collection(db, 'categories');
 
 
-const slugify = (text: string) =>
-  text
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-') // Replace spaces with -
-    .replace(/[^\w\-]+/g, '') // Remove all non-word chars
-    .replace(/\-\-+/g, '-'); // Replace multiple - with single -
+const slugify = (text: string) => {
+    if (!text) return '';
+    
+    // Handle Bengali text differently
+    const isBengali = /[\u0980-\u09FF]/.test(text);
+    
+    if (isBengali) {
+        // For Bengali text, create a more URL-friendly version while preserving Bengali characters
+        return text
+            .toString()
+            .trim()
+            // Replace specific Bengali punctuation marks with spaces
+            .replace(/[,।'"!@#$%^&*()।,.।'":।?]/g, ' ')
+            // Replace multiple spaces with single hyphen
+            .replace(/\s+/g, '-')
+            // Remove consecutive hyphens
+            .replace(/-+/g, '-')
+            // Remove hyphens from start and end
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 200);
+    } else {
+        // For Latin text, use standard slugify
+        return text
+            .toString()
+            .toLowerCase()
+            .trim()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9-\s]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 200);
+    }
+};
 
 // --- Firebase API ---
 export const formatPost = (document: DocumentSnapshot): Post => {
@@ -301,6 +328,9 @@ export const api = {
         });
     },
     addPost: async (title: string, content: string, user: User, categories: string[] | undefined): Promise<Post> => {
+        if (user.role !== 'admin') {
+            throw new Error('Only administrators can create posts.');
+        }
         const safeCategories = Array.isArray(categories) ? categories.filter(Boolean) : [];
         
         // Ensure categories exist in the categories collection
@@ -312,8 +342,13 @@ export const api = {
         }
         await batch.commit();
 
+        const generatedSlug = slugify(title);
+        if (!generatedSlug) {
+            throw new Error('Could not generate a valid URL for this post title. Please try a different title.');
+        }
+
         const newPostData = {
-            slug: slugify(title),
+            slug: generatedSlug,
             title,
             content,
             author: user.name.trim() || 'Anonymous',
@@ -364,9 +399,20 @@ export const api = {
         return formatPost(postSnapshot);
     },
 
-    updatePost: async (postId: string, title: string, content: string, categories: string[]): Promise<void> => {
+    updatePost: async (postId: string, title: string, content: string, categories: string[], user: User): Promise<void> => {
+        if (user.role !== 'admin') {
+            throw new Error('Only administrators can edit posts.');
+        }
         const safeCategories = categories.filter(Boolean);
         
+        // Get the current post to check if title has changed
+        const postDoc = doc(db, 'posts', postId);
+        const currentPost = await getDoc(postDoc);
+        
+        if (!currentPost.exists()) {
+            throw new Error('Post not found');
+        }
+
         // Ensure categories exist in the categories collection
         const batch = writeBatch(db);
         for (const category of safeCategories) {
@@ -376,11 +422,29 @@ export const api = {
         }
         await batch.commit();
 
-        const postDoc = doc(db, 'posts', postId);
-        await updateDoc(postDoc, { title, content, slug: slugify(title), categories: safeCategories });
+        const currentData = currentPost.data();
+        const updateData: any = { 
+            title, 
+            content, 
+            categories: safeCategories 
+        };
+
+        // Only update slug if title has changed
+        if (currentData.title !== title) {
+            const newSlug = slugify(title);
+            // Make sure the new slug is not empty
+            if (newSlug) {
+                updateData.slug = newSlug;
+            }
+        }
+
+        await updateDoc(postDoc, updateData);
     },
     
-    deletePost: async (postId: string): Promise<void> => {
+    deletePost: async (postId: string, user: User): Promise<void> => {
+        if (user.role !== 'admin') {
+            throw new Error('Only administrators can delete posts.');
+        }
         const postDoc = doc(db, 'posts', postId);
         await deleteDoc(postDoc);
     },

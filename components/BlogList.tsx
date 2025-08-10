@@ -1,69 +1,85 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+
 import { Post } from '../types';
-import { HeartIcon, CommentIcon, EyeIcon } from './Icons';
+import { HeartIcon, CommentIcon, EyeIcon, ClockIcon } from './Icons';
 import { AuthorAvatar } from './AuthorAvatar';
 import { useAuth } from '../hooks/useAuth';
 import { useUserPreferences } from '../hooks/useUserPreferences';
+import { calculateReadingTime, formatReadingTime } from '../utils/readingTime';
 
 interface BlogListProps {
   posts: Post[];
 }
 
-const StatIcon: React.FC<{ icon: React.ReactNode; value: number | string }> = ({ icon, value }) => (
-  <div className="flex items-center space-x-1.5 text-slate-500 dark:text-slate-400">
+interface StatIconProps {
+  icon: React.ReactNode;
+  value: string | number;
+  highlight?: boolean;
+}
+
+const StatIcon: React.FC<StatIconProps> = ({ icon, value, highlight }) => (
+  <div
+    className={`flex items-center space-x-1.5 ${
+      highlight ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'
+    }`}
+  >
     {icon}
-    <span className="text-xs font-medium">{value}</span>
+    <span className={`text-xs ${highlight ? 'font-bold' : 'font-medium'}`}>{value}</span>
   </div>
 );
 
 export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("date");
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'views' | 'upvotes' | 'comments' | 'category'>('date');
   const [viewMode, setViewMode] = useState<'recommended' | 'all'>('recommended');
 
   const { user } = useAuth();
   const { getPostScore } = useUserPreferences(user);
 
-  // Filter posts by search
-  const filteredPosts = posts
-    ? posts.filter(post => {
-        const searchLower = search.toLowerCase();
-        return (
-          post.title.toLowerCase().includes(searchLower) ||
-          post.content.toLowerCase().includes(searchLower) ||
-          (post.categories && post.categories.some(category => 
-            category.toLowerCase().includes(searchLower)
-          ))
-        );
-      })
-    : [];
+  // Filter posts by search term
+  const filteredPosts = useMemo(() => {
+    if (!posts) return [];
+    const searchLower = search.toLowerCase();
+    return posts.filter(post =>
+      post.title.toLowerCase().includes(searchLower) ||
+      post.content.toLowerCase().includes(searchLower) ||
+      (post.categories && post.categories.some(cat => cat.toLowerCase().includes(searchLower)))
+    );
+  }, [posts, search]);
 
-  // Sort and organize posts with personalization
+  // Sort and personalize posts
   const organizedPosts = useMemo(() => {
     if (!filteredPosts.length) return [];
-    
+
     const postsWithScores = filteredPosts.map(post => ({
       ...post,
-      score: getPostScore(post)
+      score: getPostScore(post),
     }));
 
     if (viewMode === 'recommended') {
-      // Sort by personalized score for recommended view
+      // Sort by personalized score descending
       return postsWithScores.sort((a, b) => b.score - a.score);
     }
 
-    // Sort by selected criteria for 'all' view
+    // Sort by chosen criteria in 'all' mode
     return postsWithScores.sort((a, b) => {
-      if (sortBy === "views") return b.views - a.views;
-      if (sortBy === "upvotes") return b.upvotes - a.upvotes;
-      if (sortBy === "comments") return b.comments.length - a.comments.length;
-      if (sortBy === "category") {
-        const aFirstCategory = (a.categories && a.categories[0]) || "";
-        const bFirstCategory = (b.categories && b.categories[0]) || "";
-        return aFirstCategory.localeCompare(bFirstCategory);
+      switch (sortBy) {
+        case 'views':
+          return b.views - a.views;
+        case 'upvotes':
+          return b.upvotes - a.upvotes;
+        case 'comments':
+          return b.comments.length - a.comments.length;
+        case 'category': {
+          const aCat = (a.categories && a.categories[0]) || '';
+          const bCat = (b.categories && b.categories[0]) || '';
+          return aCat.localeCompare(bCat);
+        }
+        case 'date':
+        default:
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
       }
-      return new Date(b.date).getTime() - new Date(a.date).getTime(); // default: date
     });
   }, [filteredPosts, sortBy, viewMode, getPostScore]);
 
@@ -81,7 +97,10 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           <div className="mb-3">
             {post.categories && post.categories.length > 0 ? (
               post.categories.map((cat, idx) => (
-                <span key={idx} className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full dark:bg-blue-900 dark:text-blue-300">
+                <span
+                  key={idx}
+                  className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full dark:bg-blue-900 dark:text-blue-300"
+                >
                   {cat}
                 </span>
               ))
@@ -94,16 +113,19 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           <h3 className="text-xl font-semibold font-serif text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
             {post.title}
           </h3>
+          <p className="mt-3 text-slate-600 dark:text-slate-400 text-sm line-clamp-3">
+            {post.content.replace(/<[^>]+>/g, '').substring(0, 200)}...
+          </p>
           <div className="mt-auto pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <Link
                   to={`/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
                 >
-                  <AuthorAvatar 
-                    className="w-9 h-9" 
-                    name={post.author} 
+                  <AuthorAvatar
+                    className="w-9 h-9"
+                    name={post.author}
                     photoURL={post.authorPhotoURL}
                     clickable
                   />
@@ -111,7 +133,7 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
                 <div>
                   <Link
                     to={`/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
                     className="text-sm font-semibold text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400"
                   >
                     {post.author}
@@ -123,6 +145,10 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
                 <StatIcon icon={<HeartIcon className="w-4 h-4" />} value={post.upvotes} />
                 <StatIcon icon={<CommentIcon className="w-4 h-4" />} value={post.comments.length} />
                 <StatIcon icon={<EyeIcon className="w-4 h-4" />} value={post.views} />
+                <StatIcon
+                  icon={<ClockIcon className="w-4 h-4" />}
+                  value={formatReadingTime(calculateReadingTime(post))}
+                />
               </div>
             </div>
           </div>
@@ -165,7 +191,7 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           {viewMode === 'all' && (
             <select
               value={sortBy}
-              onChange={e => setSortBy(e.target.value)}
+              onChange={e => setSortBy(e.target.value as any)}
               className="border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2"
             >
               <option value="date">Newest</option>
@@ -181,18 +207,14 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
       <div className="space-y-8">
         {viewMode === 'recommended' ? (
           <>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">
-              Recommended for You
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">Recommended for You</h2>
             <div className="grid gap-10 md:grid-cols-2 lg:gap-12">
               {organizedPosts.map(post => renderPost(post))}
             </div>
           </>
         ) : (
           <>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">
-              All Posts
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">All Posts</h2>
             <div className="grid gap-10 md:grid-cols-2 lg:gap-12">
               {organizedPosts.map(post => renderPost(post))}
             </div>
