@@ -15,7 +15,7 @@ export const Footer: React.FC = () => {
               Naf's Thoughts 
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Crafted with ❤️ by Nafis Abdullah 
+              Crafted with ❤️ by |Y|
             </p>
           </div>
 
@@ -59,7 +59,7 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Section */}
         <div className="mt-6 text-center text-xs text-slate-500 dark:text-slate-400">
-          &copy; {year} Naf's Thoughts — Nafis Abdullah. All rights reserved.
+          &copy; {year} Naf's Thoughts — |Y|. All rights reserved.
         </div>
       </div>
     </footer>
