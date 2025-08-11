@@ -13,11 +13,8 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, 'src'), // assuming your source code is in /src
+        '@': path.resolve(__dirname, '.'),
       },
-    },
-    optimizeDeps: {
-      include: ['chart.js', 'chart.js/auto'],
     },
     server: {
       host: '0.0.0.0',
@@ -26,7 +23,20 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: '0.0.0.0',
       port: Number(process.env.PORT) || 4173,
-      allowedHosts: ['nafsthought.onrender.com']
+      allowedHosts: ['nafsthought.onrender.com'], // Render domain
+    },
+    optimizeDeps: {
+      include: [
+        'chart.js',
+        'chart.js/auto',
+        'date-fns',
+        'react-chartjs-2'
+      ]
+    },
+    build: {
+      rollupOptions: {
+        external: []
+      }
     }
   };
 });
