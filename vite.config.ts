@@ -13,8 +13,11 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, 'src'), // assuming your source code is in /src
       },
+    },
+    optimizeDeps: {
+      include: ['chart.js', 'chart.js/auto'],
     },
     server: {
       host: '0.0.0.0',
@@ -23,7 +26,7 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: '0.0.0.0',
       port: Number(process.env.PORT) || 4173,
-      allowedHosts: ['nafsthought.onrender.com'] // 👈 Add your Render domain here
+      allowedHosts: ['nafsthought.onrender.com']
     }
   };
 });
