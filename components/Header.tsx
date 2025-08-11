@@ -4,6 +4,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { PlusIcon, LogoutIcon } from './Icons';
 import { useAuth } from '../hooks/useAuth';
 import { AuthorAvatar } from './AuthorAvatar';
+import { NotificationCenter } from './NotificationComponents';
 
 interface HeaderProps {
   theme: 'light' | 'dark';
@@ -42,6 +43,8 @@ export const Header: React.FC<HeaderProps> = ({ theme, toggleTheme, onNewPostCli
                       <span className="font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{user.name}</span>
                     </Link>
                  </div>
+                <NotificationCenter />
+                {/* Show New Post button for all authenticated users */}
                 <button
                   onClick={onNewPostClick}
                   className="hidden sm:flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-slate-900 transition-colors"

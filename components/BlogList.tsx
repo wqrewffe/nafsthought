@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Post } from '../types';
@@ -6,6 +6,7 @@ import { HeartIcon, CommentIcon, EyeIcon, ClockIcon } from './Icons';
 import { AuthorAvatar } from './AuthorAvatar';
 import { useAuth } from '../hooks/useAuth';
 import { useUserPreferences } from '../hooks/useUserPreferences';
+import { useNotifications } from '../context/NotificationsContext';
 import { calculateReadingTime, formatReadingTime } from '../utils/readingTime';
 
 interface BlogListProps {
@@ -36,6 +37,39 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
 
   const { user } = useAuth();
   const { getPostScore } = useUserPreferences(user);
+  const { showNotification } = useNotifications();
+
+  // Watch for new posts and notify
+  useEffect(() => {
+    if (!user || !posts?.length) return;
+    
+    const lastViewedPostTime = localStorage.getItem('lastViewedPostTime') || '0';
+    const newPosts = posts.filter(post => {
+      const postDate = new Date(post.date).getTime();
+      return postDate > parseInt(lastViewedPostTime) && post.author !== user.name;
+    });
+
+    if (newPosts.length > 0) {
+      localStorage.setItem('lastViewedPostTime', Date.now().toString());
+      
+      if (newPosts.length === 1) {
+        showNotification({
+          type: 'NEW_POST',
+          title: 'New Blog Post',
+          message: `${newPosts[0].author} published "${newPosts[0].title}"`,
+          recipientId: user.uid,
+          data: { postId: newPosts[0].id }
+        });
+      } else {
+        showNotification({
+          type: 'NEW_POST',
+          title: 'New Blog Posts',
+          message: `${newPosts.length} new posts have been published`,
+          recipientId: user.uid
+        });
+      }
+    }
+  }, [posts, user, showNotification]);
 
   // Filter posts by search term
   const filteredPosts = useMemo(() => {

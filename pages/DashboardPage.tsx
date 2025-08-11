@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Post, Comment, User, Category } from '../types';
 import { EyeIcon, CommentIcon, HeartIcon, TrashIcon, EditIcon, SpinnerIcon, FlagIcon, CheckCircleIcon, UserIcon, PlusIcon } from '../components/Icons';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+// Register ChartJS components
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 import { Link } from 'react-router-dom';
-import { api } from '../hooks/useBlogData';
+import { api } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
 interface DashboardPageProps {

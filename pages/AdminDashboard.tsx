@@ -5,7 +5,41 @@ import { User } from '../types';
 import { UserRole, rolePermissions, ModerationAction } from '../types/moderation';
 import { SpinnerIcon, ChartIcon, FlagIcon } from '../components/Icons';
 import { BlogStats, ReportedContent } from '../types/analytics';
+
+interface Post {
+    id: string;
+    title: string;
+    views: number;
+    createdAt: string;
+    categories?: string[];
+    comments?: any[];
+    upvotes?: number;
+}
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend,
+    ChartOptions,
+    ChartData
+} from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import MaintenanceMode from '../components/MaintenanceMode';
+
+// Register ChartJS components
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend
+);
 
 const StatCard: React.FC<{ title: string; value: string | number; icon?: React.ReactNode }> = ({ title, value, icon }) => (
     <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm">
@@ -48,6 +82,24 @@ const ReportCard: React.FC<{ report: ReportedContent; onReview: (id: string, act
     </div>
 );
 
+const chartOptions: ChartOptions<'line'> = {
+    responsive: true,
+    plugins: {
+        legend: {
+            position: 'top' as const,
+        },
+        title: {
+            display: true,
+            text: 'Site Activity'
+        }
+    },
+    scales: {
+        y: {
+            beginAtZero: true
+        }
+    }
+};
+
 export const AdminDashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'reports'>('users');
     const [users, setUsers] = useState<User[]>([]);
@@ -60,6 +112,23 @@ export const AdminDashboard: React.FC = () => {
     const [actionReason, setActionReason] = useState('');
     const [blogStats, setBlogStats] = useState<BlogStats | null>(null);
     const [reportedContent, setReportedContent] = useState<ReportedContent[]>([]);
+    const [chartData, setChartData] = useState<ChartData<'line'>>({
+        labels: [],
+        datasets: [
+            {
+                label: 'Views',
+                data: [],
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.5)',
+            },
+            {
+                label: 'Posts',
+                data: [],
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'rgba(16, 185, 129, 0.5)',
+            }
+        ]
+    });
     const [selectedPermissions, setSelectedPermissions] = useState({
         canCreatePosts: true,
         canEditOwnPosts: true,
@@ -75,9 +144,44 @@ export const AdminDashboard: React.FC = () => {
     useEffect(() => {
         const loadAnalytics = async () => {
             try {
-                const postsQuery = query(collection(db, 'posts'));
+                const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(30));
                 const postsSnapshot = await getDocs(postsQuery);
-                const posts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const posts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Post[];
+
+                // Process posts for chart data
+                const dates = posts.map(post => {
+                    const date = new Date(post.createdAt);
+                    return date.toLocaleDateString();
+                });
+                const uniqueDates = Array.from(new Set(dates)).sort();
+                
+                const viewsData = uniqueDates.map(date => {
+                    return posts
+                        .filter(post => new Date(post.createdAt).toLocaleDateString() === date)
+                        .reduce((sum, post) => sum + (post.views || 0), 0);
+                });
+
+                const postsData = uniqueDates.map(date => {
+                    return posts.filter(post => new Date(post.createdAt).toLocaleDateString() === date).length;
+                });
+
+                setChartData({
+                    labels: uniqueDates,
+                    datasets: [
+                        {
+                            label: 'Views',
+                            data: viewsData,
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        },
+                        {
+                            label: 'Posts',
+                            data: postsData,
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.5)',
+                        }
+                    ]
+                });
 
                 // Calculate statistics
                 const stats: BlogStats = {
@@ -437,6 +541,12 @@ export const AdminDashboard: React.FC = () => {
                             <StatCard title="Blocked Users" value={blogStats.userStats.blockedUsers} />
                         </div>
                     </div>
+
+                    {/* Activity Timeline */}
+                    <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm">
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Activity Timeline</h3>
+                        <Line options={chartOptions} data={chartData} />
+                    </div>
                 </div>
             )}
 
@@ -745,6 +855,11 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Maintenance Mode Section */}
+            <div className="mb-6">
+                <MaintenanceMode />
+            </div>
 
             {/* Recent Activity */}
             <div className="space-y-6">

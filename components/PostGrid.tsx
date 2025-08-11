@@ -61,7 +61,7 @@ export const PostGrid: React.FC<PostGridProps> = ({ userId }) => {
         event.preventDefault(); // Prevent navigation
         if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
             try {
-                await api.deletePost(postId, user);
+                await api.deletePost(postId);
                 setPosts(posts.filter(p => p.id !== postId));
             } catch (error) {
                 console.error('Failed to delete post:', error);

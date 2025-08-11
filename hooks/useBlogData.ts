@@ -23,6 +23,7 @@ import {
     arrayUnion,
     writeBatch
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 
 const postsCollection = collection(db, 'posts');
@@ -238,315 +239,243 @@ const calculateUserStats = async (userId: string): Promise<UserStats> => {
     };
 };
 
+const getCurrentUser = async () => {
+    const auth = getAuth();
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return null;
+
+    // Get the full user profile from Firestore
+    const userRef = doc(db, 'users', firebaseUser.uid);
+    const userDoc = await getDoc(userRef);
+    if (!userDoc.exists()) return null;
+
+    return userDoc.data() as User;
+};
+
 export const api = {
-    recordPostView: async (userId: string, postId: string, categories: string[]) => {
-        const userRef = doc(db, 'users', userId);
-        const now = new Date();
+    createPost: async (post: Partial<Post>) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to create a post');
         
-        // Update reading history
-        await updateDoc(userRef, {
-            'preferences.readingHistory': arrayUnion({
-                postId,
-                timestamp: now.toISOString(),
-                timeSpent: 0, // This would be updated later
-                completed: false,
-                categories
-            }),
-            'preferences.lastReadPosts': arrayUnion(postId),
-            'stats.lastActive': now.toISOString()
-        });
-
-        // Update user's category scores
-        const userDoc = await getDoc(userRef);
-        const userData = userDoc.data() as User;
-        const categoryScores = userData.preferences?.categoryScores || {};
+        // Generate a unique slug from the title
+        let uniqueSlug = slugify(post.title || '');
         
-        categories.forEach(category => {
-            categoryScores[category] = (categoryScores[category] || 0) + 1;
-        });
-
-        await updateDoc(userRef, {
-            'preferences.categoryScores': categoryScores
-        });
-
-        // Recalculate stats
-        const stats = await calculateUserStats(userId);
-        await updateDoc(userRef, { stats });
-    },
-
-    getUserProfile: async (usernameOrId: string): Promise<User | null> => {
-        try {
-            // First try to find by username (which is the normalized name)
-            const userQuery = query(
-                usersCollection, 
-                where('name', '==', usernameOrId.toLowerCase().replace(/-/g, ' ')),
-                limit(1)
-            );
-            const userSnap = await getDocs(userQuery);
-            
-            let userData: User | null = null;
-            let userId: string;
-
-            if (!userSnap.empty) {
-                userData = userSnap.docs[0].data() as User;
-                userId = userSnap.docs[0].id;
-            } else {
-                // If not found by username, try to find by uid
-                const userDoc = await getDoc(doc(db, 'users', usernameOrId));
-                if (userDoc.exists()) {
-                    userData = userDoc.data() as User;
-                    userId = userDoc.id;
-                }
-            }
-
-            if (!userData) {
-                return null;
-            }
-
-            // Calculate fresh stats for the user
-            const stats = await calculateUserStats(userId);
-
-            // Update the user document with new stats
-            await updateDoc(doc(db, 'users', userId), { stats });
-
-            return {
-                ...userData,
-                uid: userId,
-                stats: stats // Use the freshly calculated stats
-            };
-        } catch (error) {
-            console.error('Error fetching user profile:', error);
-            throw error;
-        }
-    },
-
-    updateUserProfile: async (userId: string, userData: Partial<User>): Promise<void> => {
-        const userDoc = doc(db, 'users', userId);
-        await updateDoc(userDoc, {
-            ...userData,
-            lastUpdated: serverTimestamp()
-        });
-    },
-    addPost: async (title: string, content: string, user: User, categories: string[] | undefined): Promise<Post> => {
-        if (user.role !== 'admin') {
-            throw new Error('Only administrators can create posts.');
-        }
-        const safeCategories = Array.isArray(categories) ? categories.filter(Boolean) : [];
+        // Check if the slug already exists
+        let slugExists = true;
+        let counter = 0;
+        let finalSlug = uniqueSlug;
         
-        // Ensure categories exist in the categories collection
-        const batch = writeBatch(db);
-        for (const category of safeCategories) {
-            const slug = category.toLowerCase().replace(/\s+/g, '-');
-            const categoryRef = doc(db, 'categories', slug);
-            batch.set(categoryRef, { name: category }, { merge: true });
-        }
-        await batch.commit();
-
-        const generatedSlug = slugify(title);
-        if (!generatedSlug) {
-            throw new Error('Could not generate a valid URL for this post title. Please try a different title.');
-        }
-
-        const newPostData = {
-            slug: generatedSlug,
-            title,
-            content,
-            author: user.name.trim() || 'Anonymous',
-            authorId: user.uid,
-            authorPhotoURL: user.photoURL || null,
-            date: serverTimestamp(),
-            upvotes: 0,
-            views: 0,
-            comments: [],
-            reports: [],
-            categories: safeCategories,
-            coverImage: `https://picsum.photos/seed/${Math.random().toString(36).substring(7)}/1200/600`
-        };
-        const docRef = await addDoc(postsCollection, newPostData);
-        return {
-            ...newPostData,
-            id: docRef.id,
-            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-        } as Post;
-    },
-    checkConnection: async (): Promise<{success: boolean; error?: string}> => {
-        try {
-            const healthCheckDoc = doc(db, '_internal', 'healthcheck');
-            await getDoc(healthCheckDoc);
-            return { success: true };
-        } catch (err: any) {
-            const detailedError = getDetailedErrorMessage(err);
-            return { success: false, error: detailedError };
-        }
-    },
-    getPosts: async (): Promise<Post[]> => {
-        const q = query(postsCollection, orderBy('date', 'desc'));
-        const postSnapshot = await getDocs(q);
-        return postSnapshot.docs.map(formatPost);
-    },
-
-    getPostBySlug: async (slug: string): Promise<Post | null> => {
-        const q = query(postsCollection, where('slug', '==', slug), limit(1));
-        const postSnapshot = await getDocs(q);
-        if (postSnapshot.empty) return null;
-        return formatPost(postSnapshot.docs[0]);
-    },
-
-    getPost: async (postId: string): Promise<Post | null> => {
-        const docRef = doc(db, 'posts', postId);
-        const postSnapshot = await getDoc(docRef);
-        if (!postSnapshot.exists()) return null;
-        return formatPost(postSnapshot);
-    },
-
-    updatePost: async (postId: string, title: string, content: string, categories: string[], user: User): Promise<void> => {
-        if (user.role !== 'admin') {
-            throw new Error('Only administrators can edit posts.');
-        }
-        const safeCategories = categories.filter(Boolean);
-        
-        // Get the current post to check if title has changed
-        const postDoc = doc(db, 'posts', postId);
-        const currentPost = await getDoc(postDoc);
-        
-        if (!currentPost.exists()) {
-            throw new Error('Post not found');
-        }
-
-        // Ensure categories exist in the categories collection
-        const batch = writeBatch(db);
-        for (const category of safeCategories) {
-            const slug = category.toLowerCase().replace(/\s+/g, '-');
-            const categoryRef = doc(db, 'categories', slug);
-            batch.set(categoryRef, { name: category }, { merge: true });
-        }
-        await batch.commit();
-
-        const currentData = currentPost.data();
-        const updateData: any = { 
-            title, 
-            content, 
-            categories: safeCategories 
-        };
-
-        // Only update slug if title has changed
-        if (currentData.title !== title) {
-            const newSlug = slugify(title);
-            // Make sure the new slug is not empty
-            if (newSlug) {
-                updateData.slug = newSlug;
+        while (slugExists) {
+            const q = query(postsCollection, where('slug', '==', finalSlug), limit(1));
+            const snapshot = await getDocs(q);
+            slugExists = !snapshot.empty;
+            if (slugExists) {
+                counter++;
+                finalSlug = `${uniqueSlug}-${counter}`;
             }
         }
+        
+        // Generate a random seed for unique cover image
+        const randomSeed = Math.random().toString(36).substring(2, 8);
+        const coverImage = `https://picsum.photos/seed/${randomSeed}/1200/600`;
 
-        await updateDoc(postDoc, updateData);
-    },
-    
-    deletePost: async (postId: string, user: User): Promise<void> => {
-        if (user.role !== 'admin') {
-            throw new Error('Only administrators can delete posts.');
-        }
-        const postDoc = doc(db, 'posts', postId);
-        await deleteDoc(postDoc);
-    },
-
-    addComment: async (postId: string, user: User, text: string, parentId: string | null = null): Promise<Comment> => {
-        if (user.isBlocked) {
-            throw new Error('You are blocked and cannot post comments.');
-        }
-
-        const postDocRef = doc(db, 'posts', postId);
-        const newComment: Comment = { 
-            id: new Date().getTime().toString(),
+        const postRef = await addDoc(postsCollection, {
+            ...post,
+            slug: finalSlug, // Add the unique slug
             authorId: user.uid,
             author: user.name,
             authorPhotoURL: user.photoURL,
-            text, 
-            timestamp: new Date().toISOString(),
-            parentId,
-        };
-        
-        await updateDoc(postDocRef, {
-            comments: arrayUnion(newComment)
+            coverImage, // Add the cover image
+            date: serverTimestamp(),
+            views: 0,
+            upvotes: 0,
+            comments: [],
+            reports: []
         });
-        return newComment;
+        return postRef.id;
     },
-    
-    deleteComment: async (postId: string, commentId: string): Promise<void> => {
-        const postDocRef = doc(db, 'posts', postId);
-        const postSnapshot = await getDoc(postDocRef);
-        if (!postSnapshot.exists()) throw new Error("Post not found to delete comment from");
+
+    updatePost: async (postId: string, updates: Partial<Post>) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to update a post');
         
-        const updatedComments = postSnapshot.data()?.comments.filter((c: any) => c.id !== commentId);
-        await updateDoc(postDocRef, { comments: updatedComments });
-    },
-    
-    upvotePost: async (postId: string): Promise<void> => {
-        const postDoc = doc(db, 'posts', postId);
-        await updateDoc(postDoc, { upvotes: increment(1) });
-    },
-    
-    incrementViewCount: async (postId: string): Promise<void> => {
-        const postDoc = doc(db, 'posts', postId);
-        try {
-            await updateDoc(postDoc, { views: increment(1) });
-        } catch (e: any) {
-            const errorMessage = getDetailedErrorMessage(e);
-            console.warn(`Failed to increment view count. Reason: ${errorMessage}`);
+        // Get the post to check permissions
+        const postRef = doc(postsCollection, postId);
+        const postSnap = await getDoc(postRef);
+        const post = postSnap.data();
+        
+        if (!post) throw new Error('Post not found');
+        if (post.authorId !== user.uid) throw new Error('You can only edit your own posts');
+        
+        // If title is being updated, also update the slug
+        if (updates.title && updates.title !== post.title) {
+            let uniqueSlug = slugify(updates.title);
+            
+            // Check if the new slug already exists (except for this post)
+            let slugExists = true;
+            let counter = 0;
+            let finalSlug = uniqueSlug;
+            
+            while (slugExists) {
+                const q = query(postsCollection, 
+                    where('slug', '==', finalSlug), 
+                    where('id', '!=', postId),
+                    limit(1)
+                );
+                const snapshot = await getDocs(q);
+                slugExists = !snapshot.empty;
+                if (slugExists) {
+                    counter++;
+                    finalSlug = `${uniqueSlug}-${counter}`;
+                }
+            }
+            
+            updates.slug = finalSlug;
         }
+        
+        await updateDoc(postRef, updates);
     },
-    
-    reportPost: async (postId: string, reporterId: string, reason: string): Promise<void> => {
-        const postDocRef = doc(db, 'posts', postId);
-        await updateDoc(postDocRef, {
+
+    deletePost: async (postId: string) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to delete a post');
+        
+        // Get the post to check permissions
+        const postRef = doc(postsCollection, postId);
+        const postSnap = await getDoc(postRef);
+        const post = postSnap.data();
+        
+        if (!post) throw new Error('Post not found');
+        
+        // Allow admins to delete any post, otherwise users can only delete their own posts
+        if (user.role !== 'admin' && post.authorId !== user.uid) {
+            throw new Error('You can only delete your own posts');
+        }
+        
+        await deleteDoc(postRef);
+    },
+
+    getPosts: async () => {
+        const q = query(postsCollection, orderBy('date', 'desc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => formatPost(doc));
+    },
+
+    getCategories: async () => {
+        const snapshot = await getDocs(categoriesCollection);
+        return snapshot.docs.map(doc => doc.data() as Category);
+    },
+
+    seedInitialCategories: async () => {
+        const batch = writeBatch(db);
+        const initialCategories = ['General', 'Technology', 'Life', 'Travel'];
+        
+        for (const category of initialCategories) {
+            const categoryRef = doc(categoriesCollection);
+            batch.set(categoryRef, { name: category });
+        }
+        
+        await batch.commit();
+    },
+
+    addPost: async (post: Partial<Post>) => {
+        return api.createPost(post);
+    },
+
+    addComment: async (postId: string, comment: Partial<Comment>) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to comment');
+
+        const postRef = doc(postsCollection, postId);
+        await updateDoc(postRef, {
+            comments: arrayUnion({
+                id: Math.random().toString(36).substr(2, 9),
+                ...comment,
+                authorId: user.uid,
+                author: user.name,
+                authorPhotoURL: user.photoURL,
+                timestamp: new Date().toISOString()
+            })
+        });
+    },
+
+    deleteComment: async (postId: string, commentId: string) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to delete a comment');
+
+        const postRef = doc(postsCollection, postId);
+        const post = await getDoc(postRef);
+        const comments = (post.data()?.comments || []) as Comment[];
+        
+        const comment = comments.find(c => c.id === commentId);
+        if (!comment) throw new Error('Comment not found');
+        
+        if (comment.authorId !== user.uid) throw new Error('You can only delete your own comments');
+        
+        await updateDoc(postRef, {
+            comments: comments.filter(c => c.id !== commentId)
+        });
+    },
+
+    reportPost: async (postId: string, reason: string) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to report a post');
+
+        const postRef = doc(postsCollection, postId);
+        await updateDoc(postRef, {
             reports: arrayUnion({
-                reporterId,
+                userId: user.uid,
                 reason,
                 timestamp: new Date().toISOString()
             })
         });
     },
-    
-    dismissReport: async (postId: string): Promise<void> => {
-        const postDocRef = doc(db, 'posts', postId);
-        await updateDoc(postDocRef, { reports: [] });
-    },
 
-    getUsers: async (): Promise<User[]> => {
-        const q = query(usersCollection, orderBy('name', 'asc'));
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => ({ ...d.data(), uid: d.id } as User));
-    },
+    dismissReport: async (postId: string, reportId: string) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to dismiss a report');
 
-    toggleUserBlock: async (uid: string, isBlocked: boolean): Promise<void> => {
-        const userDoc = doc(db, 'users', uid);
-        await updateDoc(userDoc, { isBlocked: !isBlocked });
-    },
-    
-    getCategories: async (): Promise<Category[]> => {
-        const q = query(categoriesCollection, orderBy('name', 'asc'));
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(d => ({ id: d.id, name: d.data().name } as Category));
-    },
-
-    addCategory: async (name: string): Promise<void> => {
-        const slug = name.trim().toLowerCase().replace(/\s+/g, '-');
-        if (!name.trim()) throw new Error("Category name cannot be empty.");
-        await setDoc(doc(db, 'categories', slug), { name: name.trim() });
-    },
-    
-    seedInitialCategories: async (): Promise<void> => {
-        const initialCategories = [
-            'Technology', 'Programming', 'Lifestyle', 'Travel', 'Food',
-            'Health & Fitness', 'Finance', 'Personal Development', 'Book Reviews', 'Entertainment'
-        ];
-        const batch = writeBatch(db);
-        initialCategories.forEach(name => {
-            const slug = name.toLowerCase().replace(/\s+/g, '-');
-            const docRef = doc(db, 'categories', slug);
-            batch.set(docRef, { name });
+        const postRef = doc(postsCollection, postId);
+        const post = await getDoc(postRef);
+        const reports = (post.data()?.reports || []);
+        
+        await updateDoc(postRef, {
+            reports: reports.filter((r: any) => r.id !== reportId)
         });
-        await batch.commit();
     },
+
+    upvotePost: async (postId: string) => {
+        const user = await getCurrentUser();
+        if (!user) throw new Error('Must be logged in to upvote');
+
+        const postRef = doc(postsCollection, postId);
+        await updateDoc(postRef, {
+            upvotes: increment(1)
+        });
+    },
+
+    incrementViewCount: async (postId: string) => {
+        const postRef = doc(postsCollection, postId);
+        await updateDoc(postRef, {
+            views: increment(1)
+        });
+    },
+
+    getPostBySlug: async (slug: string) => {
+        const q = query(postsCollection, where('slug', '==', slug), limit(1));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) return null;
+        return formatPost(snapshot.docs[0]);
+    },
+
+    getUserProfile: async (userId: string) => {
+        const userRef = doc(usersCollection, userId);
+        const userDoc = await getDoc(userRef);
+        if (!userDoc.exists()) return null;
+        return userDoc.data() as User;
+    },
+
+    getCurrentUser,
 };
 
 export const useBlogData = () => {
@@ -605,7 +534,7 @@ export const useBlogData = () => {
             }
         }, [refreshPosts]);
     
-    const addPost = createAction(api.addPost);
+    const addPost = createAction(api.createPost);
     const updatePost = createAction(api.updatePost);
     const deletePost = createAction(api.deletePost);
     const addComment = createAction(api.addComment);
@@ -636,5 +565,5 @@ export const useBlogData = () => {
         await api.incrementViewCount(postId);
     }, []);
 
-    return { posts, loading, error, addPost, addComment, upvotePost, incrementViewCount, updatePost, deletePost, deleteComment, reportPost, dismissReport };
+    return { posts, loading, error, addPost, addComment, upvotePost, incrementViewCount, updatePost, deletePost, deleteComment, reportPost, dismissReport, refreshPosts };
 };

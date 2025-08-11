@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { Post, User } from './types';
 import { useTheme } from './hooks/useTheme';
 import { useBlogData } from './hooks/useBlogData';
 import { useAuth } from './hooks/useAuth';
+import { useMaintenanceMode } from './hooks/useMaintenanceMode';
+import { NotificationsProvider } from './context/NotificationsContext';
+import { MaintenanceBanner } from './components/MaintenanceBanner';
 
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -31,17 +34,56 @@ const FullScreenLoader: React.FC = () => (
 );
 
 function App() {
+  console.log('App rendering');
   const [theme, toggleTheme] = useTheme();
   const { 
     posts, loading, error, addPost, addComment, upvotePost, 
-    updatePost, deletePost, deleteComment, reportPost, dismissReport
+    updatePost, deletePost, deleteComment, reportPost, dismissReport,
+    refreshPosts
   } = useBlogData();
   const { user } = useAuth();
   
   const [isPostFormOpen, setPostFormOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
-  
+  const { maintenance, isInMaintenanceMode } = useMaintenanceMode();
   const location = useLocation();
+  
+  console.log('Current user:', user);
+
+  // Render maintenance page for non-admin users when maintenance mode is active
+  if (isInMaintenanceMode && maintenance && !location.pathname.includes('/admin')) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+        {maintenance && (
+          <MaintenanceBanner 
+            message={maintenance.message} 
+            startTime={maintenance.startTime} 
+            endTime={maintenance.endTime} 
+          />
+        )}
+        <div className="flex flex-col items-center justify-center min-h-screen px-4">
+          <div className="max-w-md w-full text-center">
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
+              Site Under Maintenance
+            </h1>
+            <p className="text-slate-600 dark:text-slate-400">
+              {maintenance.message}
+            </p>
+            {user?.role === 'admin' && (
+              <div className="mt-8">
+                <Link
+                  to="/admin"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  Go to Admin Dashboard
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleOpenCreateForm = () => {
     setEditingPost(null);
@@ -59,27 +101,68 @@ function App() {
   };
 
   const handleSavePost = async (postData: { title: string; content: string; categories: string[]; }, postId?: string) => {
-    if (!user || user.role !== 'admin') {
-      alert('Only administrators can create or edit posts.');
+    if (!user) {
+      alert('You must be logged in to create or edit posts.');
       return;
     }
 
-    if (postId) {
-      await updatePost(postId, postData.title, postData.content, postData.categories, user);
-    } else {
-      await addPost(postData.title, postData.content, user as User, postData.categories);
+    try {
+      if (postId) {
+        // For editing, check if user owns the post or is an admin
+        const post = posts.find(p => p.id === postId);
+        if (!post) {
+          alert('Post not found.');
+          return;
+        }
+        if (post.authorId !== user.uid && user.role !== 'admin') {
+          alert('You can only edit your own posts.');
+          return;
+        }
+        await updatePost(postId, postData);
+        
+        // After successful update, refresh the posts list to get the new slug
+        await refreshPosts();
+        const updatedPost = posts.find(p => p.id === postId);
+        if (updatedPost) {
+          window.location.href = `/post/${updatedPost.slug}`;
+        }
+      } else {
+        // For creating new posts, any logged-in user can do it
+        const newPostId = await addPost(postData);
+        
+        // After successful creation, refresh the posts list to get the new post with slug
+        await refreshPosts();
+        const newPost = posts.find(p => p.id === newPostId);
+        if (newPost) {
+          window.location.href = `/post/${newPost.slug}`;
+        }
+      }
+      handleCloseForm();
+    } catch (error) {
+      console.error('Error saving post:', error);
+      alert('Failed to save post. Please try again.');
     }
-    handleCloseForm();
   };
 
   const handleDeletePost = async (postId: string) => {
-    if (!user || user.role !== 'admin') {
-      alert('Only administrators can delete posts.');
+    if (!user) {
+      alert('You must be logged in to delete posts.');
+      return;
+    }
+    
+    // Check if user owns the post or is an admin
+    const post = posts.find(p => p.id === postId);
+    if (!post) {
+      alert('Post not found.');
+      return;
+    }
+    if (post.authorId !== user.uid && user.role !== 'admin') {
+      alert('You can only delete your own posts.');
       return;
     }
     
     if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-      await deletePost(postId, user);
+      await deletePost(postId);
     }
   };
   
@@ -127,17 +210,17 @@ function App() {
         toggleTheme={toggleTheme} 
         onNewPostClick={handleOpenCreateForm}
       />
-      <main className="flex-grow flex flex-col">
-        {loading && !posts.length ? (
-            <FullScreenLoader />
-        ) : error ? (
-            <div className="flex-grow flex items-center justify-center text-center p-4">
-              <div className="bg-red-100 dark:bg-red-900/50 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg relative max-w-2xl" role="alert">
-                <strong className="font-bold block mb-2">Oops! A Connection Error Occurred.</strong>
-                <span className="block whitespace-pre-wrap text-left">{error}</span>
+        <main className="flex-grow flex flex-col">
+          {loading && !posts.length ? (
+              <FullScreenLoader />
+          ) : error ? (
+              <div className="flex-grow flex items-center justify-center text-center p-4">
+                <div className="bg-red-100 dark:bg-red-900/50 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg relative max-w-2xl" role="alert">
+                  <strong className="font-bold block mb-2">Oops! A Connection Error Occurred.</strong>
+                  <span className="block whitespace-pre-wrap text-left">{error}</span>
+                </div>
               </div>
-            </div>
-        ) : (
+          ) : (
             <AnimatePresence mode="wait">
             <Routes>
                 <Route path="/" element={<MotionWrapper><BlogList posts={posts} /></MotionWrapper>} />
@@ -238,7 +321,7 @@ function App() {
           <PlusIcon className="w-6 h-6" />
         </button>
       )}
-    </div>
+      </div>
   );
 }
 

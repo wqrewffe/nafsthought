@@ -7,6 +7,7 @@ import { AuthorAvatar } from './AuthorAvatar';
 import { api } from '../hooks/useBlogData';
 import { useAuth } from '../hooks/useAuth';
 import { useUserPreferences } from '../hooks/useUserPreferences';
+import { useNotifications } from '../context/NotificationsContext';
 
 interface BlogPostProps {
   upvotePost: (postId: string) => Promise<void>;
@@ -343,14 +344,67 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
     return <Navigate to="/404" replace />;
   }
 
+  const { showNotification } = useNotifications();
+
   const handleOptimisticUpvote = () => {
+    if (!user || !post) return;
     setPost(p => p ? { ...p, upvotes: p.upvotes + 1 } : null);
     upvotePost(post.id);
+
+    // Notify post author of the upvote if it's not their own post
+    if (post.authorId !== user.uid) {
+      showNotification({
+        type: 'POST_LIKE',
+        title: 'New Upvote',
+        message: `${user.name} upvoted your post "${post.title}"`,
+        recipientId: post.authorId,
+        senderId: user.uid,
+        data: { postId: post.id }
+      });
+    }
   };
   
   const handleCommentAdded = (newComment: Comment) => {
+    if (!user || !post) return;
     const finalComment = { ...newComment, authorPhotoURL: user?.photoURL ?? null };
     setPost(p => p ? { ...p, comments: [finalComment, ...p.comments] } : null);
+
+    // Notify post author of the comment if it's not their own post
+    if (post.authorId !== user.uid) {
+      showNotification({
+        type: newComment.parentId ? 'COMMENT_REPLY' : 'NEW_COMMENT',
+        title: newComment.parentId ? 'New Reply' : 'New Comment',
+        message: newComment.parentId
+          ? `${user.name} replied to a comment on "${post.title}"`
+          : `${user.name} commented on your post "${post.title}"`,
+        recipientId: post.authorId,
+        senderId: user.uid,
+        data: {
+          postId: post.id,
+          commentId: newComment.id,
+          parentId: newComment.parentId
+        }
+      });
+    }
+
+    // If this is a reply, notify the parent comment author
+    if (newComment.parentId) {
+      const parentComment = post.comments.find(c => c.id === newComment.parentId);
+      if (parentComment && parentComment.authorId !== user.uid) {
+        showNotification({
+          type: 'COMMENT_REPLY',
+          title: 'New Reply',
+          message: `${user.name} replied to your comment on "${post.title}"`,
+          recipientId: parentComment.authorId,
+          senderId: user.uid,
+          data: {
+            postId: post.id,
+            commentId: newComment.id,
+            parentCommentId: newComment.parentId
+          }
+        });
+      }
+    }
   };
 
   const shareUrl = `${window.location.origin}${window.location.pathname}#${location.hash.substring(1)}`;
@@ -394,7 +448,81 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
         className="w-full h-[480px] object-cover rounded-2xl shadow-xl mb-12" 
       />
       
-      <div className="prose prose-xl dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 font-serif leading-relaxed" dangerouslySetInnerHTML={{ __html: post.content }} />
+      <div 
+        className="
+          prose 
+          prose-xl 
+          dark:prose-invert 
+          max-w-none 
+          text-slate-700 
+          dark:text-slate-200 
+          font-serif 
+          leading-relaxed
+          prose-headings:font-bold
+          prose-h1:text-4xl
+          prose-h1:mb-8
+          prose-h2:text-3xl
+          prose-h2:mb-6
+          prose-h3:text-2xl
+          prose-h3:mb-4
+          prose-blockquote:border-l-4
+          prose-blockquote:border-blue-500
+          prose-blockquote:pl-4
+          prose-blockquote:italic
+          prose-mark:rounded
+          prose-mark:px-1
+          [&_span]:transition-all
+          [&_span]:duration-200
+          
+          /* Text Colors */
+          [&_.text-red-500]:text-red-500
+          [&_.text-red-500]:dark:text-red-400
+          [&_.text-blue-500]:text-blue-500
+          [&_.text-blue-500]:dark:text-blue-400
+          [&_.text-green-500]:text-green-500
+          [&_.text-green-500]:dark:text-green-400
+          [&_.text-purple-500]:text-purple-500
+          [&_.text-purple-500]:dark:text-purple-400
+          [&_.text-yellow-500]:text-yellow-500
+          [&_.text-yellow-500]:dark:text-yellow-400
+
+          /* Links */
+          [&_a]:text-blue-500
+          [&_a]:transition-colors
+          [&_a:hover]:text-blue-700
+          
+          /* Lists */
+          [&_ul]:list-inside
+          [&_ol]:list-inside
+          [&_li]:my-1
+          
+          /* Code Blocks */
+          [&_pre]:bg-gray-100
+          [&_pre]:dark:bg-gray-800
+          [&_pre]:p-4
+          [&_pre]:rounded-lg
+          [&_pre]:overflow-x-auto
+          [&_pre_code]:text-sm
+          [&_code]:bg-gray-100
+          [&_code]:dark:bg-gray-800
+          [&_code]:rounded
+          [&_code]:px-1
+          
+          /* Blockquotes */
+          [&_blockquote]:border-l-4
+          [&_blockquote]:border-blue-500
+          [&_blockquote]:pl-4
+          [&_blockquote]:italic
+          [&_blockquote]:my-4
+          
+          /* Images */
+          [&_img]:rounded-lg
+          [&_img]:shadow-md
+          [&_img]:max-w-full
+          [&_img]:my-4
+        " 
+        dangerouslySetInnerHTML={{ __html: post.content }} 
+      />
       
       <div className="my-12 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex flex-wrap items-center justify-around gap-6">
         <Stat icon={<EyeIcon className="w-6 h-6 text-blue-500" />} label="Views" value={post.views.toLocaleString()} />
@@ -410,8 +538,8 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
           <p className="text-sm text-slate-600 dark:text-slate-300 font-mono break-all">{shareUrl}</p>
         </div>
         <div className="flex items-center space-x-4">
-          {/* Only show edit/delete options for admin */}
-          {user && user.role === 'admin' && (
+          {/* Show edit/delete options for post owner or admin */}
+          {user && (user.role === 'admin' || user.uid === post.authorId) && (
             <div className="flex items-center space-x-3 mr-4">
               <Link
                 to={`/edit/${post.slug}`}
@@ -420,21 +548,18 @@ export const BlogPost: React.FC<BlogPostProps> = ({ upvotePost, addComment, repo
                 <EditIcon className="w-4 h-4" />
                 <span>Edit</span>
               </Link>
-              {/* Only show delete option for admin */}
-              {user.role === 'admin' && (
-                <button
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-                      api.deletePost(post.id, user);
-                      window.location.href = '/';
-                    }
-                  }}
-                  className="flex items-center space-x-1 text-xs text-red-600 dark:text-red-400 hover:underline"
-                >
-                  <TrashIcon className="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+                    api.deletePost(post.id);
+                    window.location.href = '/';
+                  }
+                }}
+                className="flex items-center space-x-1 text-xs text-red-600 dark:text-red-400 hover:underline"
+              >
+                <TrashIcon className="w-4 h-4" />
+                <span>Delete</span>
+              </button>
             </div>
           )}
           <div className="flex flex-col">

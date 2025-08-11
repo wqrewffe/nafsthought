@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../hooks/useBlogData';
+import { api } from '../services/api';
 import { SpinnerIcon, CheckCircleIcon, ErrorCircleIcon } from '../components/Icons';
 
 export const StatusPage: React.FC = () => {

@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, collection } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { firebaseConfig } from './firebaseConfig';
 
@@ -16,6 +16,10 @@ const db = getFirestore(app);
 
 // Get an Auth instance.
 const auth = getAuth(app);
+
+// Initialize collections
+export const notificationsCollection = collection(db, 'notifications');
+export const notificationPreferencesCollection = collection(db, 'notificationPreferences');
 
 // Export the initialized services for use in other parts of the app.
 export { db, auth };
