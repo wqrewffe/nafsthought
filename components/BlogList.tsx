@@ -1,12 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-
 import { Post } from '../types';
 import { HeartIcon, CommentIcon, EyeIcon, ClockIcon } from './Icons';
 import { AuthorAvatar } from './AuthorAvatar';
 import { useAuth } from '../hooks/useAuth';
 import { useUserPreferences } from '../hooks/useUserPreferences';
 import { useNotifications } from '../context/NotificationsContext';
+import { websocketService } from '../services/websocketService';
+import { recommendationService } from '../services/recommendationService';
 import { calculateReadingTime, formatReadingTime } from '../utils/readingTime';
 
 interface BlogListProps {
@@ -34,70 +35,99 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'views' | 'upvotes' | 'comments' | 'category'>('date');
   const [viewMode, setViewMode] = useState<'recommended' | 'all'>('recommended');
+  const [newPosts, setNewPosts] = useState<Post[]>([]);
+  const [recommendedPosts, setRecommendedPosts] = useState<Post[]>([]);
 
   const { user } = useAuth();
   const { getPostScore } = useUserPreferences(user);
   const { showNotification } = useNotifications();
 
-  // Watch for new posts and notify
+  // Get personalized recommendations
   useEffect(() => {
-    if (!user || !posts?.length) return;
-    
-    const lastViewedPostTime = localStorage.getItem('lastViewedPostTime') || '0';
-    const newPosts = posts.filter(post => {
-      const postDate = new Date(post.date).getTime();
-      return postDate > parseInt(lastViewedPostTime) && post.author !== user.name;
-    });
+    const fetchRecommendations = async () => {
+      if (user && viewMode === 'recommended') {
+        const recommendations = await recommendationService.getRecommendations(user.uid, posts);
+        setRecommendedPosts(recommendations);
+      }
+    };
 
-    if (newPosts.length > 0) {
-      localStorage.setItem('lastViewedPostTime', Date.now().toString());
-      
-      if (newPosts.length === 1) {
+    fetchRecommendations();
+  }, [user, posts, viewMode]);
+
+  // Track post views and update recommendations
+  const handlePostClick = useCallback((post: Post) => {
+    if (user) {
+      recommendationService.updateUserPreference(user.uid, post);
+    }
+  }, [user]);
+
+  // WebSocket subscription for new posts
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = websocketService.subscribe('post', (data) => {
+      if (data.type === 'new' && data.post.author !== user.name) {
+        setNewPosts((prev) => [...prev, data.post]);
         showNotification({
-          type: 'NEW_POST',
-          title: 'New Blog Post',
-          message: `${newPosts[0].author} published "${newPosts[0].title}"`,
-          recipientId: user.uid,
-          data: { postId: newPosts[0].id }
-        });
-      } else {
-        showNotification({
-          type: 'NEW_POST',
-          title: 'New Blog Posts',
-          message: `${newPosts.length} new posts have been published`,
-          recipientId: user.uid
+          title: 'New Post',
+          message: `${data.post.author} just published "${data.post.title}"`,
+          type: 'info',
         });
       }
-    }
-  }, [posts, user, showNotification]);
+    });
 
-  // Filter posts by search term
+    return () => unsubscribe();
+  }, [user, showNotification]);
+
+  // Handle newPosts notifications
+  useEffect(() => {
+    if (!user || newPosts.length === 0) return;
+
+    localStorage.setItem('lastViewedPostTime', Date.now().toString());
+
+    if (newPosts.length === 1) {
+      showNotification({
+        type: 'NEW_POST',
+        title: 'New Blog Post',
+        message: `${newPosts[0].author} published "${newPosts[0].title}"`,
+        recipientId: user.uid,
+        data: { postId: newPosts[0].id },
+      });
+    } else {
+      showNotification({
+        type: 'NEW_POST',
+        title: 'New Blog Posts',
+        message: `${newPosts.length} new posts have been published`,
+        recipientId: user.uid,
+      });
+    }
+  }, [newPosts, user, showNotification]);
+
+  // Filter posts
   const filteredPosts = useMemo(() => {
     if (!posts) return [];
     const searchLower = search.toLowerCase();
-    return posts.filter(post =>
-      post.title.toLowerCase().includes(searchLower) ||
-      post.content.toLowerCase().includes(searchLower) ||
-      (post.categories && post.categories.some(cat => cat.toLowerCase().includes(searchLower)))
+    return posts.filter(
+      (post) =>
+        post.title.toLowerCase().includes(searchLower) ||
+        post.content.toLowerCase().includes(searchLower) ||
+        (post.categories && post.categories.some((cat) => cat.toLowerCase().includes(searchLower)))
     );
   }, [posts, search]);
 
-  // Sort and personalize posts
+  // Organize posts
   const organizedPosts = useMemo(() => {
     if (!filteredPosts.length) return [];
 
-    const postsWithScores = filteredPosts.map(post => ({
-      ...post,
-      score: getPostScore(post),
-    }));
-
-    if (viewMode === 'recommended') {
-      // Sort by personalized score descending
-      return postsWithScores.sort((a, b) => b.score - a.score);
+    // If in recommended mode and we have recommendations, use them
+    if (viewMode === 'recommended' && recommendedPosts.length > 0) {
+      return recommendedPosts.filter(post => 
+        filteredPosts.some(fp => fp.id === post.id)
+      );
     }
 
-    // Sort by chosen criteria in 'all' mode
-    return postsWithScores.sort((a, b) => {
+    // Otherwise, fall back to basic sorting
+    return filteredPosts.sort((a, b) => {
       switch (sortBy) {
         case 'views':
           return b.views - a.views;
@@ -118,7 +148,12 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
   }, [filteredPosts, sortBy, viewMode, getPostScore]);
 
   const renderPost = (post: Post) => (
-    <Link to={`/post/${post.slug}`} key={post.id} className="group block animate-fade-in">
+        <Link
+      to={`/post/${post.slug}`}
+      key={post.id}
+      className="block bg-white dark:bg-slate-900 rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 mb-6"
+      onClick={() => handlePostClick(post)}
+    >
       <div className="flex flex-col h-full bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden">
         <div className="h-52 overflow-hidden">
           <img
@@ -152,19 +187,21 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           </p>
           <div className="mt-auto pt-6">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3" onClick={e => e.stopPropagation()}>
-                <div>
-                  <AuthorAvatar
-                    className="w-9 h-9"
-                    name={post.author}
-                    photoURL={post.authorPhotoURL}
-                    clickable
-                    onClick={() => window.location.href = `/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
-                  />
-                </div>
+              <div className="flex items-center space-x-3" onClick={(e) => e.stopPropagation()}>
+                <AuthorAvatar
+                  className="w-9 h-9"
+                  name={post.author}
+                  photoURL={post.authorPhotoURL}
+                  clickable
+                  onClick={() =>
+                    (window.location.href = `/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`)
+                  }
+                />
                 <div>
                   <button
-                    onClick={() => window.location.href = `/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
+                    onClick={() =>
+                      (window.location.href = `/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`)
+                    }
                     className="text-sm font-semibold text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 bg-transparent border-none cursor-pointer p-0"
                   >
                     {post.author}
@@ -195,7 +232,7 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           type="text"
           placeholder="Search posts..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           className="border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 w-full md:w-1/2"
         />
         <div className="flex items-center space-x-4">
@@ -222,7 +259,7 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           {viewMode === 'all' && (
             <select
               value={sortBy}
-              onChange={e => setSortBy(e.target.value as any)}
+              onChange={(e) => setSortBy(e.target.value as any)}
               className="border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2"
             >
               <option value="date">Newest</option>
@@ -236,21 +273,12 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
       </div>
 
       <div className="space-y-8">
-        {viewMode === 'recommended' ? (
-          <>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">Recommended for You</h2>
-            <div className="grid gap-10 md:grid-cols-2 lg:gap-12">
-              {organizedPosts.map(post => renderPost(post))}
-            </div>
-          </>
-        ) : (
-          <>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">All Posts</h2>
-            <div className="grid gap-10 md:grid-cols-2 lg:gap-12">
-              {organizedPosts.map(post => renderPost(post))}
-            </div>
-          </>
-        )}
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">
+          {viewMode === 'recommended' ? 'Recommended for You' : 'All Posts'}
+        </h2>
+        <div className="grid gap-10 md:grid-cols-2 lg:gap-12">
+          {organizedPosts.map((post) => renderPost(post))}
+        </div>
       </div>
     </div>
   );

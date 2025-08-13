@@ -6,6 +6,8 @@ import { UserRole, rolePermissions, ModerationAction } from '../types/moderation
 import { SpinnerIcon, ChartIcon, FlagIcon } from '../components/Icons';
 import AutoBlogPostSystem from '../components/AutoBlogPostSystem';
 import { SeriesManagement } from '../components/SeriesManagement';
+import { ContentAnalytics } from '../components/ContentAnalytics';
+import { UserEngagementManager } from '../components/UserEngagementManager';
 import { BlogStats, ReportedContent } from '../types/analytics';
 
 interface Post {
@@ -103,7 +105,7 @@ const chartOptions: ChartOptions<'line'> = {
 };
 
 export const AdminDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'reports' | 'auto-blog' | 'series'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'reports' | 'auto-blog' | 'series' | 'content-analytics' | 'user-engagement'>('users');
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -477,6 +479,26 @@ export const AdminDashboard: React.FC = () => {
                         }`}
                     >
                         <span>Series</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('content-analytics')}
+                        className={`px-4 py-2 rounded-lg ${
+                            activeTab === 'content-analytics'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                    >
+                        Content Analytics
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('user-engagement')}
+                        className={`px-4 py-2 rounded-lg ${
+                            activeTab === 'user-engagement'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                    >
+                        User Engagement
                     </button>
                     <button
                         onClick={() => setActiveTab('users')}
@@ -889,6 +911,20 @@ export const AdminDashboard: React.FC = () => {
             {activeTab === 'series' && (
                 <div className="space-y-6">
                     <SeriesManagement />
+                </div>
+            )}
+
+            {/* Content Analytics */}
+            {activeTab === 'content-analytics' && (
+                <div className="space-y-6">
+                    <ContentAnalytics />
+                </div>
+            )}
+
+            {/* User Engagement */}
+            {activeTab === 'user-engagement' && (
+                <div className="space-y-6">
+                    <UserEngagementManager />
                 </div>
             )}
 

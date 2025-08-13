@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Post, Comment, User, UserStats, Category } from '../types';
 import { db } from '../firebase'; // Removed storage import
+import { websocketService } from '../services/websocketService';
+import { recommendationService } from '../services/recommendationService';
 
 // Firebase imports for v9+ (modular)
 import { 
@@ -68,6 +70,7 @@ const slugify = (text: string) => {
 };
 
 // --- Firebase API ---
+
 export const formatPost = (document: DocumentSnapshot): Post => {
     const data = document.data() as any;
     if (!data) {
@@ -496,6 +499,28 @@ export const useBlogData = () => {
             }
         };
         initCategories();
+    }, []);
+
+    // Subscribe to real-time updates
+    useEffect(() => {
+        const unsubscribe = websocketService.subscribe('post', (data) => {
+            setPosts(prevPosts => {
+                switch (data.type) {
+                    case 'new':
+                        return [data.post, ...prevPosts];
+                    case 'update':
+                        return prevPosts.map(post => 
+                            post.id === data.post.id ? { ...post, ...data.post } : post
+                        );
+                    case 'delete':
+                        return prevPosts.filter(post => post.id !== data.postId);
+                    default:
+                        return prevPosts;
+                }
+            });
+        });
+
+        return () => unsubscribe();
     }, []);
 
     const refreshPosts = useCallback(async () => {
