@@ -26,6 +26,7 @@ import { StatusPage } from './pages/StatusPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { SeriesPage } from './pages/SeriesPage';
 
 const FullScreenLoader: React.FC = () => (
     <div className="flex-grow flex items-center justify-center">
@@ -235,6 +236,14 @@ function App() {
                     />
                     </MotionWrapper>
                 } 
+                />
+                <Route
+                path="/series/:slug"
+                element={
+                    <MotionWrapper>
+                        <SeriesPage />
+                    </MotionWrapper>
+                }
                 />
                 <Route 
                 path="/edit/:slug"

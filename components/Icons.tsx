@@ -6,7 +6,8 @@ type IconComponent = React.FC<{
 import { 
     Sun, Moon, Heart, MessageCircle, Eye, Share2, Plus, Send, X, Menu, 
     LogOut, Trash2, Edit, Loader2, CheckCircle2, XCircle, User, EyeOff, Flag,
-    Bookmark, BarChart2, Award, Settings, Twitter, Github, Linkedin, Globe 
+    Bookmark, BarChart2, Award, Settings, Twitter, Github, Linkedin, Globe,
+    ChevronLeft, ChevronRight 
 } from 'lucide-react';
 
 interface IconProps {
@@ -18,6 +19,8 @@ export const MoonIcon: React.FC<IconProps> = ({ className }) => <Moon className=
 export const HeartIcon: React.FC<IconProps> = ({ className }) => <Heart className={className} />;
 export const CommentIcon: React.FC<IconProps> = ({ className }) => <MessageCircle className={className} />;
 export const EyeIcon: React.FC<IconProps> = ({ className }) => <Eye className={className} />;
+export const ChevronLeftIcon: React.FC<IconProps> = ({ className }) => <ChevronLeft className={className} />;
+export const ChevronRightIcon: React.FC<IconProps> = ({ className }) => <ChevronRight className={className} />;
 export const EyeOffIcon: React.FC<IconProps> = ({ className }) => <EyeOff className={className} />;
 export const ShareIcon: React.FC<IconProps> = ({ className }) => <Share2 className={className} />;
 export const PlusIcon: React.FC<IconProps> = ({ className }) => <Plus className={className} />;

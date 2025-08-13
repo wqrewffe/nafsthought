@@ -152,26 +152,23 @@ export const BlogList: React.FC<BlogListProps> = ({ posts }) => {
           </p>
           <div className="mt-auto pt-6">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Link
-                  to={`/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
-                  onClick={e => e.stopPropagation()}
-                >
+              <div className="flex items-center space-x-3" onClick={e => e.stopPropagation()}>
+                <div>
                   <AuthorAvatar
                     className="w-9 h-9"
                     name={post.author}
                     photoURL={post.authorPhotoURL}
                     clickable
+                    onClick={() => window.location.href = `/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
                   />
-                </Link>
+                </div>
                 <div>
-                  <Link
-                    to={`/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
-                    onClick={e => e.stopPropagation()}
-                    className="text-sm font-semibold text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400"
+                  <button
+                    onClick={() => window.location.href = `/profile/${post.author.toLowerCase().replace(/\s+/g, '-')}`}
+                    className="text-sm font-semibold text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 bg-transparent border-none cursor-pointer p-0"
                   >
                     {post.author}
-                  </Link>
+                  </button>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{post.date}</p>
                 </div>
               </div>

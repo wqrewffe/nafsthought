@@ -11,13 +11,16 @@ export interface Comment {
 }
 
 export interface Post {
-  id:string;
+  id: string;
   slug: string;
   title: string;
   content: string;
   author: string;
   authorId: string;
   authorPhotoURL: string | null;
+  seriesId?: string;
+  seriesTitle?: string;
+  seriesOrder?: number;
   date: string;
   upvotes: number;
   views: number;

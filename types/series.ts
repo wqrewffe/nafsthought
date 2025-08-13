@@ -1,17 +1,25 @@
-export interface PostSeries {
+import { Timestamp } from 'firebase/firestore';
+
+export interface Series {
     id: string;
     title: string;
     description: string;
     coverImage?: string;
-    createdBy: string;
-    createdAt: string;
-    updatedAt: string;
+    authorId: string;
+    authorName: string;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+    postIds: string[];
+    slug: string;
+    status: 'draft' | 'published';
+    totalPosts: number;
+}
+
+export interface SeriesWithPosts extends Series {
     posts: {
-        postId: string;
+        id: string;
+        title: string;
+        slug: string;
         order: number;
     }[];
-    isPublished: boolean;
-    slug: string;
-    totalPosts: number;
-    estimatedReadingTime: number;
 }

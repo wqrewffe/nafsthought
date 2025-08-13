@@ -4,6 +4,8 @@ import { db } from '../firebase';
 import { User } from '../types';
 import { UserRole, rolePermissions, ModerationAction } from '../types/moderation';
 import { SpinnerIcon, ChartIcon, FlagIcon } from '../components/Icons';
+import AutoBlogPostSystem from '../components/AutoBlogPostSystem';
+import { SeriesManagement } from '../components/SeriesManagement';
 import { BlogStats, ReportedContent } from '../types/analytics';
 
 interface Post {
@@ -101,7 +103,7 @@ const chartOptions: ChartOptions<'line'> = {
 };
 
 export const AdminDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'reports'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'reports' | 'auto-blog' | 'series'>('users');
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -455,17 +457,7 @@ export const AdminDashboard: React.FC = () => {
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
                     Admin Dashboard
                 </h1>
-                <div className="flex space-x-4">
-                    <button
-                        onClick={() => setActiveTab('users')}
-                        className={`px-4 py-2 rounded-lg ${
-                            activeTab === 'users'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                        }`}
-                    >
-                        Users
-                    </button>
+                <div className="flex flex-wrap gap-4">
                     <button
                         onClick={() => setActiveTab('analytics')}
                         className={`px-4 py-2 rounded-lg ${
@@ -475,6 +467,26 @@ export const AdminDashboard: React.FC = () => {
                         }`}
                     >
                         Analytics
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('series')}
+                        className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+                            activeTab === 'series'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                    >
+                        <span>Series</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('users')}
+                        className={`px-4 py-2 rounded-lg ${
+                            activeTab === 'users'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                    >
+                        Users
                     </button>
                     <button
                         onClick={() => setActiveTab('reports')}
@@ -490,6 +502,16 @@ export const AdminDashboard: React.FC = () => {
                                 {reportedContent.length}
                             </span>
                         )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('auto-blog')}
+                        className={`px-4 py-2 rounded-lg ${
+                            activeTab === 'auto-blog'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                    >
+                        <span>Auto Blog</span>
                     </button>
                 </div>
             </div>
@@ -853,6 +875,20 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Auto Blog System */}
+            {activeTab === 'auto-blog' && (
+                <div className="space-y-6">
+                    <AutoBlogPostSystem />
+                </div>
+            )}
+
+            {/* Series Management */}
+            {activeTab === 'series' && (
+                <div className="space-y-6">
+                    <SeriesManagement />
                 </div>
             )}
 
