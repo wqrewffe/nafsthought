@@ -1,336 +1,251 @@
-import React, { useState } from 'react';
-import { Routes, Route, useLocation, Navigate, Link } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
 
-import { Post, User } from './types';
-import { useTheme } from './hooks/useTheme';
-import { useBlogData } from './hooks/useBlogData';
-import { useAuth } from './hooks/useAuth';
-import { useMaintenanceMode } from './hooks/useMaintenanceMode';
-import { NotificationsProvider } from './context/NotificationsContext';
-import { MaintenanceBanner } from './components/MaintenanceBanner';
+import React, { Suspense } from 'react';
+import * as ReactRouterDOM from 'react-router-dom';
+import './styles/interactive.css';
+import { AuthProvider } from './hooks/useAuth';
+import { ThemeProvider } from './hooks/useTheme';
+import { SettingsProvider } from './hooks/useSettings';
+import { CongratulationsProvider } from './hooks/CongratulationsProvider';
+import { ToolAccessProvider } from './hooks/useToolAccess';
+import Layout from './components/Layout';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import FastLoadingSpinner from './components/FastLoadingSpinner';
 
-import { Header } from './components/Header';
-import { Footer } from './components/Footer';
-import { BlogList } from './components/BlogList';
-import { BlogPost } from './components/BlogPost';
-import { CreatePostForm } from './components/CreatePostForm';
-import { LoginPage } from './pages/LoginPage';
-import { SignupPage } from './pages/SignupPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { AdminRoute } from './components/AdminRoute';
-import { NotFoundPage } from './pages/NotFoundPage';
-import { PlusIcon, SpinnerIcon } from './components/Icons';
-import { StatusPage } from './pages/StatusPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { VerifyEmailPage } from './pages/VerifyEmailPage';
-import { AdminDashboard } from './pages/AdminDashboard';
-import { SeriesPage } from './pages/SeriesPage';
+// Lazy load all main pages
+const HomePage = React.lazy(() => import('./pages/HomePage'));
+const LoginPage = React.lazy(() => import('./pages/LoginPage'));
+const SignUpPage = React.lazy(() => import('./pages/SignUpPage'));
+const ToolPage = React.lazy(() => import('./pages/ToolPage'));
+const CompetitionPage = React.lazy(() => import('./components/CompetitionPage'));
+const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
+import { Routes, Route } from 'react-router-dom';
+import PrivateRoute from './components/PrivateRoute';
+import AdminRoute from './components/AdminRoute';
+import { Toaster } from 'react-hot-toast';
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
+const TrainerApp = React.lazy(() => import('./TRAINER/trainerExport'));
+const DevToolboxApp = React.lazy(() => import('./dev-toolbox/App'));
+const ToolsShowcaseApp = React.lazy(() => import('./ai-tools-showcase/App'));
+const VerifyEmailPage = React.lazy(() => import('./pages/VerifyEmailPage'));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage'));
+const AdminDashboardPage = React.lazy(() => import('./pages/admin/AdminDashboardPage'));
+const UserHistoryPage = React.lazy(() => import('./pages/admin/UserHistoryPage'));
+const ModifyPage = React.lazy(() => import('./pages/admin/ModifyPage'));
+const BuyCheckoutPage = React.lazy(() => import('./pages/BuyCheckoutPage'));
+const PaymentVerificationPage = React.lazy(() => import('./pages/admin/PaymentVerificationPage'));
+const ChangeProductPricePage = React.lazy(() => import('./pages/admin/ChangeProductPricePage'));
+const TodoListPage = React.lazy(() => import('./pages/TodoListPage'));
+const NoteTakingPage = React.lazy(() => import('./pages/NoteTakingPage'));
+const ReferralPage = React.lazy(() => import('./pages/ReferralPage'));
+const LeaderboardPage = React.lazy(() => import('./pages/LeaderboardPage'));
+const BadgesPage = React.lazy(() => import('./pages/BadgesPage'));
+const PoliciesPage = React.lazy(() => import('./pages/PoliciesPage'));
+const SupportPage = React.lazy(() => import('./pages/SupportPage'));
+const ContactPage = React.lazy(() => import('./pages/ContactPage'));
+const HelpChatPage = React.lazy(() => import('./pages/HelpChatPage'));
+const SharedOutputPage = React.lazy(() => import('./pages/SharedOutputPage'));
+import CongratulationsModal from './components/CongratulationsModal';
 
-const FullScreenLoader: React.FC = () => (
-    <div className="flex-grow flex items-center justify-center">
-        <SpinnerIcon className="w-12 h-12 text-blue-600" />
-    </div>
-);
+// Wrapper to extract :mode param and pass it to TrainerApp
+const TrainerWrapper: React.FC = () => {
+  const params = ReactRouterDOM.useParams();
+  const raw = params.mode ?? null;
+
+  // map kebab-case route slug to trainer AppMode camelCase string
+  const slugToMode = (s: string | null) => {
+    if (!s) return null;
+    const map: Record<string, string> = {
+      'select': 'select',
+      'lights-out': 'lightsOut',
+      'grid-reflex': 'gridReflex',
+      'precision-point': 'precisionPoint',
+      'sequence': 'sequence',
+      'color-match': 'colorMatch',
+      'peripheral-vision': 'peripheralVision',
+      'dodge-and-click': 'dodgeAndClick',
+      'auditory-reaction': 'auditoryReaction',
+      'cognitive-shift': 'cognitiveShift',
+      'target-tracking': 'targetTracking',
+      'digit-span': 'digitSpan',
+      'visual-search': 'visualSearch'
+    };
+    const lower = s.toLowerCase();
+    return map[lower] ?? null;
+  };
+
+  const mode = slugToMode(raw as string | null);
+
+  // TrainerApp is lazy-loaded, type assertions used to avoid TSX prop typing issues
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  return <TrainerApp initialMode={mode} />;
+};
 
 function App() {
-  console.log('App rendering');
-  const [theme, toggleTheme] = useTheme();
-  const { 
-    posts, loading, error, addPost, addComment, upvotePost, 
-    updatePost, deletePost, deleteComment, reportPost, dismissReport,
-    refreshPosts
-  } = useBlogData();
-  const { user } = useAuth();
-  
-  const [isPostFormOpen, setPostFormOpen] = useState(false);
-  const [editingPost, setEditingPost] = useState<Post | null>(null);
-  const { maintenance, isInMaintenanceMode } = useMaintenanceMode();
-  const location = useLocation();
-  
-  console.log('Current user:', user);
-
-  // Render maintenance page for non-admin users when maintenance mode is active
-  if (isInMaintenanceMode && maintenance && !location.pathname.includes('/admin')) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-        {maintenance && (
-          <MaintenanceBanner 
-            message={maintenance.message} 
-            startTime={maintenance.startTime} 
-            endTime={maintenance.endTime} 
-          />
-        )}
-        <div className="flex flex-col items-center justify-center min-h-screen px-4">
-          <div className="max-w-md w-full text-center">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
-              Site Under Maintenance
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400">
-              {maintenance.message}
-            </p>
-            {user?.role === 'admin' && (
-              <div className="mt-8">
-                <Link
-                  to="/admin"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                >
-                  Go to Admin Dashboard
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const handleOpenCreateForm = () => {
-    setEditingPost(null);
-    setPostFormOpen(true);
-  };
-
-  const handleOpenEditForm = (post: Post) => {
-    setEditingPost(post);
-    setPostFormOpen(true);
-  };
-
-  const handleCloseForm = () => {
-    setPostFormOpen(false);
-    setEditingPost(null);
-  };
-
-  const handleSavePost = async (postData: { title: string; content: string; categories: string[]; }, postId?: string) => {
-    if (!user) {
-      alert('You must be logged in to create or edit posts.');
-      return;
-    }
-
-    try {
-      if (postId) {
-        // For editing, check if user owns the post or is an admin
-        const post = posts.find(p => p.id === postId);
-        if (!post) {
-          alert('Post not found.');
-          return;
-        }
-        if (post.authorId !== user.uid && user.role !== 'admin') {
-          alert('You can only edit your own posts.');
-          return;
-        }
-        await updatePost(postId, postData);
-        
-        // After successful update, refresh the posts list to get the new slug
-        await refreshPosts();
-        const updatedPost = posts.find(p => p.id === postId);
-        if (updatedPost) {
-          window.location.href = `/post/${updatedPost.slug}`;
-        }
-      } else {
-        // For creating new posts, any logged-in user can do it
-        const newPostId = await addPost(postData);
-        
-        // After successful creation, refresh the posts list to get the new post with slug
-        await refreshPosts();
-        const newPost = posts.find(p => p.id === newPostId);
-        if (newPost) {
-          window.location.href = `/post/${newPost.slug}`;
-        }
-      }
-      handleCloseForm();
-    } catch (error) {
-      console.error('Error saving post:', error);
-      alert('Failed to save post. Please try again.');
-    }
-  };
-
-  const handleDeletePost = async (postId: string) => {
-    if (!user) {
-      alert('You must be logged in to delete posts.');
-      return;
-    }
-    
-    // Check if user owns the post or is an admin
-    const post = posts.find(p => p.id === postId);
-    if (!post) {
-      alert('Post not found.');
-      return;
-    }
-    if (post.authorId !== user.uid && user.role !== 'admin') {
-      alert('You can only delete your own posts.');
-      return;
-    }
-    
-    if (window.confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-      await deletePost(postId);
-    }
-  };
-  
-  const handleBlockUser = async (userId: string) => {
-    // This is a placeholder as the block logic is in DashboardPage.
-    // However, if needed from other places, it would be implemented here.
-    console.log(`Blocking user ${userId}`);
-  };
-
-
-  const handleDeleteComment = async (postId: string, commentId: string) => {
-    if (window.confirm('Are you sure you want to delete this comment?')) {
-      await deleteComment(postId, commentId);
-    }
-  };
-
-  const pageVariants = {
-    initial: { opacity: 0, y: 20 },
-    in: { opacity: 1, y: 0 },
-    out: { opacity: 0, y: -20 },
-  };
-
-  const pageTransition = {
-    type: 'tween',
-    ease: 'anticipate',
-    duration: 0.4,
-  } as const;
-  
-  const MotionWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-      <motion.div
-        initial="initial"
-        animate="in"
-        exit="out"
-        variants={pageVariants}
-        transition={pageTransition}
-      >
-        {children}
-      </motion.div>
-  );
-
   return (
-    <div className="min-h-screen flex flex-col font-sans text-slate-700 dark:text-slate-300">
-      <Header 
-        theme={theme} 
-        toggleTheme={toggleTheme} 
-        onNewPostClick={handleOpenCreateForm}
-      />
-        <main className="flex-grow flex flex-col">
-          {loading && !posts.length ? (
-              <FullScreenLoader />
-          ) : error ? (
-              <div className="flex-grow flex items-center justify-center text-center p-4">
-                <div className="bg-red-100 dark:bg-red-900/50 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg relative max-w-2xl" role="alert">
-                  <strong className="font-bold block mb-2">Oops! A Connection Error Occurred.</strong>
-                  <span className="block whitespace-pre-wrap text-left">{error}</span>
-                </div>
-              </div>
-          ) : (
-            <AnimatePresence mode="wait">
-            <Routes>
-                <Route path="/" element={<MotionWrapper><BlogList posts={posts} /></MotionWrapper>} />
-                <Route 
-                path="/post/:slug" 
-                element={
-                    <MotionWrapper>
-                    <BlogPost 
-                        upvotePost={upvotePost} 
-                        addComment={addComment}
-                        reportPost={reportPost}
-                    />
-                    </MotionWrapper>
-                } 
-                />
-                <Route
-                path="/series/:slug"
-                element={
-                    <MotionWrapper>
-                        <SeriesPage />
-                    </MotionWrapper>
-                }
-                />
-                <Route 
-                path="/edit/:slug"
-                element={
-                    <ProtectedRoute>
-                        <MotionWrapper>
-                            <CreatePostForm 
-                                isOpen={true}
-                                onClose={() => window.location.href = '/'}
-                                onSave={handleSavePost}
-                                postToEdit={posts.find(p => p.slug === location.pathname.split('/')[2])}
-                            />
-                        </MotionWrapper>
-                    </ProtectedRoute>
-                }
-                />
-                <Route path="/login" element={<MotionWrapper><LoginPage /></MotionWrapper>} />
-                <Route path="/signup" element={<MotionWrapper><SignupPage /></MotionWrapper>} />
-                <Route path="/verify-email" element={<MotionWrapper><VerifyEmailPage /></MotionWrapper>} />
-                <Route 
-                    path="/profile/:username"
+    <AuthProvider>
+      <ThemeProvider>
+        <SettingsProvider>
+          <CongratulationsProvider>
+            <ToolAccessProvider>
+              <ReactRouterDOM.HashRouter>
+                {/* App chrome that should always be visible */}
+                <Navbar />
+                <ReactRouterDOM.Routes>
+                  {/* Trainer route rendered outside Layout so it displays full-screen without navbar/footer */}
+                  <ReactRouterDOM.Route
+                    path="/trainer/:mode?"
                     element={
-                        <MotionWrapper><ProfilePage /></MotionWrapper>
+                      <React.Suspense fallback={<div className="p-8 text-center">Loading Trainer...</div>}>
+                        <TrainerWrapper />
+                      </React.Suspense>
                     }
-                />
-                <Route 
-                path="/admin/dashboard"
-                element={
-                    <AdminRoute>
-                    <MotionWrapper>
-                        <DashboardPage 
-                        posts={posts}
-                        onEditPost={handleOpenEditForm}
-                        onDeletePost={handleDeletePost}
-                        onDeleteComment={handleDeleteComment}
-                        onDismissReport={dismissReport}
-                        onBlockUser={handleBlockUser}
-                        />
-                    </MotionWrapper>
-                    </AdminRoute>
-                }
-                />
-                <Route 
-                path="/admin"
-                element={
-                    <AdminRoute>
-                    <MotionWrapper>
-                        <AdminDashboard />
-                    </MotionWrapper>
-                    </AdminRoute>
-                }
-                />
-                <Route 
-                path="/admin/status"
-                element={
-                    <ProtectedRoute adminOnly={true}>
-                    <MotionWrapper>
-                        <StatusPage />
-                    </MotionWrapper>
-                    </ProtectedRoute>
-                }
-                />
-                <Route path="/404" element={<MotionWrapper><NotFoundPage /></MotionWrapper>} />
-                <Route path="*" element={<Navigate to="/404" />} />
-            </Routes>
-            </AnimatePresence>
-        )}
-      </main>
-      <Footer />
-      
-      <CreatePostForm 
-        isOpen={isPostFormOpen}
-        onClose={handleCloseForm}
-        onSave={handleSavePost}
-        postToEdit={editingPost}
-      />
+                  />
 
-      {!!user && (
-        <button
-          onClick={handleOpenCreateForm}
-          className="sm:hidden fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-all transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-          aria-label="Create new post"
-        >
-          <PlusIcon className="w-6 h-6" />
-        </button>
-      )}
-      </div>
+                  {/* Dev-toolbox rendered outside Layout to allow it to be full-screen (no main header/footer) */}
+                  <ReactRouterDOM.Route
+                    path="/toolbox/*"
+                    element={
+                      <React.Suspense fallback={<div className="p-8 text-center">Loading Toolbox...</div>}>
+                        {/* @ts-ignore */}
+                        <DevToolboxApp />
+                      </React.Suspense>
+                    }
+                  />
+
+                  {/* AI Tools Showcase rendered outside Layout so it can manage its own hash routing and full-screen UI */}
+                  <ReactRouterDOM.Route
+                    path="/showcase/*"
+                    element={
+                      <React.Suspense fallback={<div className="p-8 text-center">Loading Tools Showcase...</div>}>
+                        {/* @ts-ignore */}
+                        <ToolsShowcaseApp />
+                      </React.Suspense>
+                    }
+                  />
+
+                  {/* All other routes render inside the main Layout */}
+                  <ReactRouterDOM.Route
+                    path="/*"
+                    element={
+                      <Layout>
+                        <React.Suspense fallback={<FastLoadingSpinner />}>
+                          <ReactRouterDOM.Routes>
+                          {/* Public Routes */}
+                          <ReactRouterDOM.Route path="/" element={<HomePage />} />
+                          <ReactRouterDOM.Route path="/login" element={<LoginPage />} />
+                          <ReactRouterDOM.Route path="/signup" element={<SignUpPage />} />
+                          <ReactRouterDOM.Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                          <ReactRouterDOM.Route path="/verify-email" element={<VerifyEmailPage />} />
+
+                          {/* Private User Routes */}
+                          <ReactRouterDOM.Route 
+                            path="/tool/:toolId" 
+                            element={<ToolPage />} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/competition/:id"
+                            element={<PrivateRoute><CompetitionPage /></PrivateRoute>}
+                          />
+                          {/* Route for own profile */}
+                          <ReactRouterDOM.Route 
+                            path="/profile" 
+                            element={<PrivateRoute><ProfilePage /></PrivateRoute>} 
+                          />
+                          {/* Route for viewing any user's profile */}
+                          <ReactRouterDOM.Route 
+                            path="/profile/:username" 
+                            element={<ProfilePage />} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/settings" 
+                            element={<PrivateRoute><SettingsPage /></PrivateRoute>} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/referral" 
+                            element={<PrivateRoute><ReferralPage /></PrivateRoute>} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/buy/:pack"
+                            element={<PrivateRoute><BuyCheckoutPage /></PrivateRoute>}
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/todo" 
+                            element={<PrivateRoute><TodoListPage /></PrivateRoute>} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/notes" 
+                            element={<PrivateRoute><NoteTakingPage /></PrivateRoute>} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/leaderboard" 
+                            element={<PrivateRoute><LeaderboardPage /></PrivateRoute>} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/badges" 
+                            element={<PrivateRoute><BadgesPage /></PrivateRoute>} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/policies" 
+                            element={<PoliciesPage />} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/support" 
+                            element={<SupportPage />} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/contact" 
+                            element={<ContactPage />} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/helpchat" 
+                            element={<HelpChatPage />} 
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/shared/:id" 
+                            element={<SharedOutputPage />} 
+                          />
+                          {/* /toolbox is served by the full-screen dev-toolbox route defined above */}
+                          
+                          {/* Admin Routes */}
+                          <ReactRouterDOM.Route 
+                            path="/admin" 
+                            element={<AdminRoute><AdminDashboardPage /></AdminRoute>}
+                          />
+                          <ReactRouterDOM.Route
+                            path="/modify"
+                            element={<AdminRoute><ModifyPage /></AdminRoute>}
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/admin/user/:userId" 
+                            element={<AdminRoute><UserHistoryPage /></AdminRoute>}
+                          />
+                          <ReactRouterDOM.Route 
+                            path="/admin/purchase-requests"
+                            element={<AdminRoute><PaymentVerificationPage /></AdminRoute>}
+                          />
+                          <ReactRouterDOM.Route
+                            path="/admin/change-product-price"
+                            element={<AdminRoute><ChangeProductPricePage /></AdminRoute>}
+                          />
+                          </ReactRouterDOM.Routes>
+                        </React.Suspense>
+                      </Layout>
+                    }
+                  />
+                </ReactRouterDOM.Routes>
+                {/* Global Toaster for react-hot-toast */}
+                <Toaster position="top-right" />
+                {/* Always-visible footer */}
+                <Footer />
+                {/* CongratulationsModal is rendered by the CongratulationsProvider */}
+              </ReactRouterDOM.HashRouter>
+            </ToolAccessProvider>
+          </CongratulationsProvider>
+        </SettingsProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
 
